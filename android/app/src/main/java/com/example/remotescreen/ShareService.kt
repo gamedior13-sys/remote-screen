@@ -43,6 +43,7 @@ import org.webrtc.SessionDescription
 import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
+import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
@@ -425,7 +426,14 @@ class ShareService : Service() {
         dc = peer.createDataChannel("ctrl", DataChannel.Init()).also { ch ->
             ch.registerObserver(object : DataChannel.Observer {
                 override fun onBufferedAmountChange(prev: Long) {}
-                override fun onStateChange() {}
+                override fun onStateChange() {
+                    if (ch.state() == DataChannel.State.OPEN) {
+                        ControlAccessibilityService.imeListener = { on, text, pw ->
+                            sendToController(JSONObject().put("t", "ime").put("on", on).put("text", text).put("pw", pw))
+                        }
+                        ControlAccessibilityService.instance?.reportFocus(true)
+                    }
+                }
                 override fun onMessage(buffer: DataChannel.Buffer) {
                     val bytes = ByteArray(buffer.data.remaining()).also { buffer.data.get(it) }
                     try { handleControl(JSONObject(String(bytes, Charsets.UTF_8))) } catch (t: Throwable) { Log.w(TAG, "ctrl", t) }
@@ -444,7 +452,15 @@ class ShareService : Service() {
         }, MediaConstraints())
     }
 
+    private fun sendToController(o: JSONObject) {
+        val ch = dc ?: return
+        try {
+            if (ch.state() == DataChannel.State.OPEN) ch.send(DataChannel.Buffer(ByteBuffer.wrap(o.toString().toByteArray(Charsets.UTF_8)), false))
+        } catch (t: Throwable) { Log.w(TAG, "dc send", t) }
+    }
+
     private fun closePeer() {
+        ControlAccessibilityService.imeListener = null
         try { dc?.close(); dc?.dispose() } catch (_: Throwable) {}
         try { pc?.close(); pc?.dispose() } catch (_: Throwable) {}
         dc = null
@@ -466,6 +482,7 @@ class ShareService : Service() {
             )
             "key" -> svc.key(o.getString("k"))
             "text" -> svc.text(o.getString("s"))
+            "settext" -> svc.setText(o.getString("s"))
         }
     }
 

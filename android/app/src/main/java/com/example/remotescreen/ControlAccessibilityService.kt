@@ -20,7 +20,13 @@ class ControlAccessibilityService : AccessibilityService() {
         @Volatile
         var instance: ControlAccessibilityService? = null
             private set
+
+        /** Called with (editableFieldFocused, currentText, isPassword) whenever input focus changes. */
+        @Volatile
+        var imeListener: ((Boolean, String, Boolean) -> Unit)? = null
     }
+
+    private var lastFocusKey: String? = null
 
     override fun onServiceConnected() {
         instance = this
@@ -31,7 +37,28 @@ class ControlAccessibilityService : AccessibilityService() {
         return super.onUnbind(intent)
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        when (event?.eventType) {
+            AccessibilityEvent.TYPE_VIEW_FOCUSED,
+            AccessibilityEvent.TYPE_VIEW_CLICKED,
+            AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED,
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> reportFocus(false)
+        }
+    }
+
+    /** Tell the controller whether a text field is focused, so it can show its keyboard. */
+    fun reportFocus(force: Boolean) {
+        val listener = imeListener ?: return
+        val node = try { findFocus(AccessibilityNodeInfo.FOCUS_INPUT) } catch (_: Throwable) { null }
+        val editable = node != null && node.isEditable
+        val key = if (editable) "${node!!.windowId}:${node.hashCode()}" else "none"
+        if (!force && key == lastFocusKey) return
+        lastFocusKey = key
+        if (!editable) { listener(false, "", false); return }
+        val pw = node!!.isPassword
+        val text = if (pw || node.isShowingHintText) "" else node.text?.toString().orEmpty()
+        listener(true, text, pw)
+    }
     override fun onInterrupt() {}
 
     private fun screenSize(): Pair<Int, Int> {
@@ -87,11 +114,14 @@ class ControlAccessibilityService : AccessibilityService() {
 
     fun text(s: String) = editFocused { it + s }
 
+    /** Replace the whole content of the focused field (live mirror of the controller's input box). */
+    fun setText(s: String) = editFocused { s }
+
     /** Replace the text of the focused input field with transform(currentText). */
     private fun editFocused(transform: (String) -> String) {
         val node = findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return
         // A field showing only its hint reports the hint as text; ignore it.
-        val current = if (Build.VERSION.SDK_INT >= 26 && node.isShowingHintText) "" else node.text?.toString() ?: ""
+        val current = if (node.isShowingHintText) "" else node.text?.toString() ?: ""
         val args = Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, transform(current))
         }
