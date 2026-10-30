@@ -2,7 +2,12 @@ name: Build Android APK
 
 on:
   push:
+    paths-ignore:
+      - "server/public/remote-screen.apk"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -27,3 +32,14 @@ jobs:
         with:
           name: RemoteScreen-apk
           path: android/app/build/outputs/apk/debug/*.apk
+
+      # Publish the APK on the web server so phones can download it directly:
+      # https://<server>/remote-screen.apk
+      - name: Publish APK to server/public
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk server/public/remote-screen.apk
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add server/public/remote-screen.apk
+          git commit -m "Publish APK" || exit 0
+          git push
