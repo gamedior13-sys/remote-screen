@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: remote-screen-phong
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: CF_TURN_KEY_ID
+        sync: false
+      - key: CF_TURN_TOKEN
+        sync: false
