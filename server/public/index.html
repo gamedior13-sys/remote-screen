@@ -84,7 +84,7 @@
 
   /* ---------- session screen ---------- */
   #session { position: fixed; inset: 0; background: #000; overflow: hidden; }
-  #vbox { position: absolute; left: var(--sal); right: var(--sar); top: calc(var(--sat) + 58px); bottom: calc(var(--sab) + 84px);
+  #vbox { position: absolute; left: var(--sal); right: var(--sar); top: calc(var(--sat) + 112px); bottom: calc(var(--sab) + 84px);
     overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
   video { position: absolute; transform-origin: 50% 50%; outline: none; pointer-events: none; background: #000; }
   .top { position: absolute; left: 0; right: 0; top: 0; padding: calc(var(--sat) + 10px) calc(var(--sar) + 12px) 10px calc(var(--sal) + 12px);
@@ -99,13 +99,23 @@
   .tb:active { background: rgba(255,255,255,.16); }
   .tb.danger { color: var(--bad); }
 
-  .pills { position: absolute; left: 50%; top: calc(var(--sat) + 62px); transform: translateX(-50%); z-index: 3;
-    display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; max-width: calc(100% - 24px); }
-  .pill { color: #c9d1e3; font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap;
-    padding: 4px 10px; border-radius: 999px; background: rgba(11,13,18,.65); border: 1px solid rgba(255,255,255,.07); }
-  .pill:empty { display: none; }
-  .pill.warn { color: #ffd38a; border-color: rgba(255,181,71,.35); }
-  .pill.bad { color: #ffb3ba; border-color: rgba(255,93,108,.45); }
+  /* status strip: connection + TURN quota, outside the video */
+  .status { position: absolute; left: calc(var(--sal) + 12px); right: calc(var(--sar) + 12px); top: calc(var(--sat) + 60px); z-index: 3;
+    height: 46px; padding: 6px 12px; border-radius: 14px; background: var(--card); border: 1px solid var(--line);
+    display: flex; flex-direction: column; justify-content: center; gap: 5px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .srow { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; }
+  .srow > span { overflow: hidden; text-overflow: ellipsis; }
+  .badge { flex: none; padding: 1px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+    background: rgba(255,255,255,.08); color: var(--muted); }
+  .badge.p2p { background: rgba(47,209,122,.15); color: var(--ok); }
+  .badge.turn { background: rgba(255,181,71,.15); color: var(--warn); }
+  #stext { color: #c9d1e3; }
+  .qlabel { margin-left: auto; color: var(--dim); flex: none; }
+  .bar { flex: none; width: 64px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--ok), #7be3a9); transition: width .4s; }
+  .bar.warn i { background: linear-gradient(90deg, var(--warn), #ffd38a); }
+  .bar.bad i { background: linear-gradient(90deg, var(--bad), #ff97a1); }
+  #quota.warn { color: #ffd38a; } #quota.bad { color: #ffb3ba; }
   #zoomchip { position: absolute; right: calc(var(--sar) + 12px); bottom: calc(var(--sab) + 96px); z-index: 3;
     padding: 6px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600; background: rgba(22,26,35,.85); border: 1px solid rgba(255,255,255,.12); }
 
@@ -125,6 +135,9 @@
     background: var(--card); border-top: 1px solid var(--line); border-radius: 20px 20px 0 0; box-shadow: 0 -20px 40px rgba(0,0,0,.5);
     transform: translateY(110%); transition: transform .22s ease; }
   .sheet.open { transform: none; }
+  .sheet .hint { font-size: 12px; color: var(--muted); margin: 0 2px 8px; display: flex; align-items: center; gap: 6px; }
+  .sheet .hint b { color: var(--ok); }
+  .sheet.live .manual-only, .sheet:not(.live) .live-only { display: none; }
   .sheet .grip { width: 38px; height: 4px; border-radius: 2px; background: var(--line2); margin: 0 auto 12px; }
   .sheet .row { gap: 8px; }
   .sheet .inp { height: 48px; font-size: 16px; }
@@ -160,7 +173,7 @@
   @media (orientation: landscape) and (max-height: 540px) {
     .top { padding-top: calc(var(--sat) + 6px); padding-bottom: 6px; }
     #vbox { top: calc(var(--sat) + 50px); bottom: var(--sab); right: calc(var(--sar) + 82px); }
-    .pills { top: calc(var(--sat) + 54px); }
+    .status { top: calc(var(--sat) + 4px); left: 50%; right: auto; transform: translateX(-50%); width: min(380px, calc(100% - 400px)); height: 42px; padding: 4px 10px; gap: 3px; }
     .nav { left: auto; right: calc(var(--sar) + 10px); top: 50%; bottom: auto; transform: translateY(-50%); flex-direction: column; }
     .nav button { width: 56px; height: 56px; }
     .nav .sep { width: auto; height: 1px; margin: 2px 8px; }
@@ -225,7 +238,10 @@
     <button class="tb danger" id="bye" aria-label="Ngắt kết nối"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
   </div>
 
-  <div class="pills"><span class="pill" id="stats"></span><span class="pill" id="quota"></span></div>
+  <div class="status" id="status">
+    <div class="srow"><span class="badge" id="badge">…</span><span id="stext">Đang kết nối…</span><span class="qlabel" id="qlabel"></span></div>
+    <div class="srow" id="qrow"><div class="bar" id="qbarw"><i id="qbar"></i></div><span id="quota"></span></div>
+  </div>
   <button id="zoomchip" class="hidden">1.0× · Đặt lại</button>
 
   <div class="nav" id="nav">
@@ -258,12 +274,13 @@
 
   <div class="sheet" id="sheet">
     <div class="grip"></div>
+    <div class="hint live-only"><b>●</b> Máy Android đang chọn một ô nhập liệu. Chạm vào ô dưới để mở bàn phím, chữ gõ được đồng bộ ngay.</div>
     <div class="row">
       <input id="textin" class="inp" placeholder="Gõ chữ gửi vào ô đang chọn…" autocomplete="off" autocorrect="off" autocapitalize="off">
-      <button class="kbtn primary" id="sendtext">Gửi</button>
+      <button class="kbtn primary manual-only" id="sendtext">Gửi</button>
     </div>
     <div class="keys">
-      <button class="kbtn" data-key="backspace">⌫ Xoá</button>
+      <button class="kbtn manual-only" data-key="backspace">⌫ Xoá</button>
       <button class="kbtn" data-key="enter">↵ Enter</button>
       <button class="kbtn" id="sheetClose">Đóng</button>
     </div>
@@ -286,7 +303,8 @@
 
   let ws, pc, dc, statsTimer, usageTimer, iceServers = [], current = null;
   let inSession = false, reconnecting = false, reconnectSince = 0, retryTimer = null, discTimer = null;
-  let relay = null, lastKbps = 0, usage = null, wakeLock = null;
+  let relay = null, lastKbps = 0, usage = null, wakeLock = null, sessionRelayBytes = 0;
+  let imeActive = false, sheetByIme = false, liveTimer = null;
 
   // ---------- helpers ----------
   const fmtId = (id) => String(id).replace(/\D/g, '').slice(0, 9).replace(/(\d{3})(?=\d)/g, '$1 ');
@@ -437,8 +455,10 @@
     $('#session').classList.remove('hidden');
     $('#sid').textContent = fmtId(current.id);
     $('#dot').classList.remove('ok');
-    $('#stats').textContent = ''; $('#quota').textContent = '';
-    relay = null; usage = null;
+    $('#stext').textContent = 'Đang kết nối…'; $('#quota').textContent = ''; $('#qlabel').textContent = '';
+    $('#badge').className = 'badge'; $('#badge').textContent = '…';
+    relay = null; usage = null; sessionRelayBytes = 0;
+    refreshUsage();
     resetZoom();
     busy(false);
     keepAwake();
@@ -469,7 +489,11 @@
     pc = new RTCPeerConnection({ iceServers });
     const me = pc;
     pc.onicecandidate = (e) => { if (e.candidate && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'signal', data: { candidate: e.candidate } })); };
-    pc.ondatachannel = (e) => { dc = e.channel; dc.onopen = () => sendQuality(); };
+    pc.ondatachannel = (e) => {
+      dc = e.channel;
+      dc.onopen = () => sendQuality();
+      dc.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.t === 'ime') onIme(m); } catch {} };
+    };
     pc.ontrack = (e) => {
       video.srcObject = e.streams[0];
       const r = e.receiver;
@@ -499,6 +523,7 @@
     const q = QUALITY[qualityKey()];
     if (dc && dc.readyState === 'open') dc.send(JSON.stringify({ t: 'quality', fps: q.fps, long: q.long, br: q.br }));
     syncMenu();
+    $('#qlabel').textContent = QUALITY[qualityKey()].label;
   }
 
   // ---------- stats & TURN quota ----------
@@ -519,7 +544,10 @@
       }
     });
     const now = performance.now();
-    if (bytes != null && last.t && bytes >= last.bytes) lastKbps = Math.round(((bytes - last.bytes) * 8) / (now - last.t));
+    if (bytes != null && last.t && bytes >= last.bytes) {
+      lastKbps = Math.round(((bytes - last.bytes) * 8) / (now - last.t));
+      if (relay) sessionRelayBytes += bytes - last.bytes;
+    }
     if (bytes != null) last = { bytes, t: now };
     if (isRelay !== null && isRelay !== relay) {
       relay = isRelay;
@@ -531,8 +559,10 @@
     if (rtt != null) parts.push(rtt + ' ms');
     if (fps != null) parts.push(Math.round(fps) + ' fps');
     if (bytes != null) parts.push(lastKbps >= 1000 ? (lastKbps / 1000).toFixed(1) + ' Mbps' : lastKbps + ' kbps');
-    if (relay !== null) parts.push(relay ? 'qua TURN' : 'P2P');
-    $('#stats').textContent = parts.join(' · ');
+    $('#stext').textContent = parts.join(' · ') || 'Đang kết nối…';
+    const bd = $('#badge');
+    bd.className = 'badge' + (relay === true ? ' turn' : relay === false ? ' p2p' : '');
+    bd.textContent = relay === true ? 'TURN' : relay === false ? 'P2P' : '…';
     renderQuota();
   }
 
@@ -540,21 +570,36 @@
     try { usage = await (await fetch('usage', { cache: 'no-store' })).json(); } catch { usage = null; }
     renderQuota();
   }
+  const fmtMB = (mb) => (mb >= 1024 ? (mb / 1024).toFixed(mb >= 10240 ? 0 : 1) + ' GB' : Math.round(mb) + ' MB');
   function renderQuota() {
-    const el = $('#quota');
-    el.classList.remove('warn', 'bad');
-    if (!relay) { el.textContent = relay === false ? 'Kết nối thẳng · không tốn dung lượng TURN' : ''; return; }
-    if (!usage || !usage.available) { el.textContent = ''; return; }
-    const left = Math.max(0, usage.quotaMB - usage.usedMB);
-    const pct = usage.quotaMB ? left / usage.quotaMB : 0;
-    const fmt = (mb) => (mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : Math.round(mb) + ' MB');
-    let txt = `TURN còn ${fmt(left)}/${fmt(usage.quotaMB)}`;
-    if (lastKbps > 30) {
-      const min = (left * 8 * 1024) / lastKbps / 60;
-      txt += ` · ≈ ${min >= 120 ? Math.round(min / 60) + ' giờ' : Math.max(0, Math.round(min)) + ' phút'}`;
+    const el = $('#quota'), bw = $('#qbarw');
+    el.className = ''; bw.className = 'bar';
+    const sess = sessionRelayBytes / 1048576;
+    const sessTxt = sess >= 0.1 ? ` · phiên này ${sess < 10 ? sess.toFixed(1) : Math.round(sess)} MB` : '';
+    if (usage && usage.available && usage.quotaMB) {
+      bw.classList.remove('hidden');
+      const used = usage.usedMB == null ? null : usage.usedMB;
+      const name = usage.provider ? usage.provider + ' · ' : '';
+      if (used == null) {
+        $('#qbar').style.width = '100%';
+        el.textContent = `${name}gói ${fmtMB(usage.quotaMB)}/tháng${sessTxt}`;
+        return;
+      }
+      const left = Math.max(0, usage.quotaMB - used);
+      const pct = left / usage.quotaMB;
+      $('#qbar').style.width = Math.max(2, pct * 100) + '%';
+      let txt = `${name}còn ${fmtMB(left)}/${fmtMB(usage.quotaMB)}`;
+      if (relay && lastKbps > 30) {
+        const min = (left * 8 * 1024) / lastKbps / 60;
+        txt += ` · ≈ ${min >= 120 ? Math.round(min / 60) + ' giờ' : Math.max(0, Math.round(min)) + ' phút'}`;
+      } else if (relay === false) txt += ' · kết nối thẳng, không tốn';
+      el.textContent = txt;
+      if (pct < 0.03) { el.classList.add('bad'); bw.classList.add('bad'); }
+      else if (pct < 0.1) { el.classList.add('warn'); bw.classList.add('warn'); }
+    } else {
+      bw.classList.add('hidden');
+      el.textContent = relay === false ? 'Kết nối thẳng · không tốn dung lượng TURN' : relay ? `Đang đi qua TURN${sessTxt}` : '';
     }
-    el.textContent = txt;
-    if (pct < 0.03) el.classList.add('bad'); else if (pct < 0.1) el.classList.add('warn');
   }
 
   function endSession(msg) {
@@ -564,7 +609,8 @@
     try { ws && (ws.onclose = null, ws.close()); } catch {}
     ws = null;
     video.srcObject = null;
-    $('#sheet').classList.remove('open'); $('#menu').classList.add('hidden');
+    $('#sheet').classList.remove('open', 'live'); $('#menu').classList.add('hidden');
+    imeActive = false; sheetByIme = false;
     $('#session').classList.add('hidden');
     $('#home').classList.remove('hidden');
     busy(false);
@@ -719,11 +765,49 @@
 
   document.querySelectorAll('[data-key]').forEach((b) => b.addEventListener('click', () => { haptic(); sendCtl({ t: 'key', k: b.dataset.key }); }));
 
-  const sendText = () => { const v = $('#textin').value; if (v) { sendCtl({ t: 'text', s: v }); $('#textin').value = ''; toast('Đã gửi'); } };
+  // ---------- keyboard: manual send, or live mirror of the focused Android text field ----------
+  const textin = $('#textin'), sheet = $('#sheet');
+  const finePointer = window.matchMedia('(pointer: fine)').matches;
+  function openSheet(live) {
+    $('#menu').classList.add('hidden');
+    sheet.classList.add('open');
+    sheet.classList.toggle('live', !!live);
+    textin.placeholder = live ? 'Gõ vào ô đang chọn trên máy Android…' : 'Gõ chữ gửi vào ô đang chọn…';
+  }
+  function closeSheet() { sheet.classList.remove('open', 'live'); sheetByIme = false; textin.blur(); textin.type = 'text'; }
+  function onIme(m) {
+    imeActive = !!m.on;
+    if (imeActive) {
+      if (!sheet.classList.contains('open')) sheetByIme = true;
+      openSheet(true);
+      textin.type = m.pw ? 'password' : 'text';
+      if (document.activeElement !== textin) textin.value = m.text || '';
+      if (finePointer) textin.focus();
+    } else if (sheet.classList.contains('live')) {
+      if (sheetByIme) closeSheet(); else openSheet(false);
+    }
+  }
+  const sendText = () => { const v = textin.value; if (v) { sendCtl({ t: 'text', s: v }); textin.value = ''; toast('Đã gửi'); } };
   $('#sendtext').addEventListener('click', sendText);
-  $('#textin').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendText(); } });
-  $('#kb').addEventListener('click', () => { $('#menu').classList.add('hidden'); const s = $('#sheet'); s.classList.toggle('open'); if (s.classList.contains('open')) $('#textin').focus(); });
-  $('#sheetClose').addEventListener('click', () => { $('#sheet').classList.remove('open'); $('#textin').blur(); });
+  textin.addEventListener('input', () => {
+    if (!sheet.classList.contains('live')) return;
+    clearTimeout(liveTimer);
+    liveTimer = setTimeout(() => sendCtl({ t: 'settext', s: textin.value }), 90);
+  });
+  textin.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (sheet.classList.contains('live')) { clearTimeout(liveTimer); sendCtl({ t: 'settext', s: textin.value }); setTimeout(() => sendCtl({ t: 'key', k: 'enter' }), 60); }
+    else sendText();
+  });
+  $('#kb').addEventListener('click', () => { if (sheet.classList.contains('open')) closeSheet(); else { openSheet(imeActive); textin.focus(); } });
+  $('#sheetClose').addEventListener('click', closeSheet);
+  // keep the input bar above the iPhone keyboard
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const fit = () => { sheet.style.bottom = Math.max(0, window.innerHeight - vv.height - vv.offsetTop) + 'px'; };
+    vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
+  }
 
   // ---------- options menu ----------
   function syncMenu() {
