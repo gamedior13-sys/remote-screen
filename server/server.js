@@ -64,9 +64,18 @@ async function hostedTurn() {
       const j = await r.json();
       list = Array.isArray(j.iceServers) ? j.iceServers : j.iceServers ? [j.iceServers] : null;
     } else if (METERED_APP && METERED_API_KEY) {
-      const r = await fetch(`https://${METERED_APP}.metered.live/api/v1/turn/credentials?apiKey=${encodeURIComponent(METERED_API_KEY)}`);
-      const j = await r.json();
-      list = Array.isArray(j) ? j : null;
+      // Accept either the bare key or the whole URL copied from the Metered dashboard.
+      const raw = METERED_API_KEY.trim();
+      const m = raw.match(/apiKey=([^&\s"']+)/);
+      const key = m ? m[1] : raw;
+      const host = raw.match(/https:\/\/([a-z0-9-]+)\.metered\.live/i);
+      const app = host ? host[1] : METERED_APP.replace(/\.metered\.live.*$/, '');
+      const r = await fetch(`https://${app}.metered.live/api/v1/turn/credentials?apiKey=${encodeURIComponent(key)}`);
+      const text = await r.text();
+      let j = null;
+      try { j = JSON.parse(text); } catch {}
+      list = Array.isArray(j) ? j : Array.isArray(j && j.iceServers) ? j.iceServers : null;
+      if (!list) console.warn(`hosted TURN: Metered answered HTTP ${r.status}: ${text.slice(0, 200)}`);
     }
   } catch (e) {
     console.warn('hosted TURN fetch failed:', e.message);
