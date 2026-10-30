@@ -58,12 +58,25 @@ class ShareService : Service() {
         private const val FPS = 30
         private const val MAX_BITRATE_BPS = 4_000_000
 
+        const val STATE_CONNECTING = 0
+        const val STATE_READY = 1
+        const val STATE_CONTROLLED = 2
+
         @Volatile
         var running = false
             private set
+
+        /** Connection state shown in the app UI. */
+        @Volatile
+        var state = STATE_CONNECTING
+            private set
     }
 
-    private val http = OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS).build()
+    private val http = OkHttpClient.Builder()
+        .pingInterval(20, TimeUnit.SECONDS)
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .build()
     private var ws: WebSocket? = null
     private var eglBase: EglBase? = null
     private var factory: PeerConnectionFactory? = null
@@ -98,6 +111,7 @@ class ShareService : Service() {
         // The foreground service (type mediaProjection) must be running BEFORE the projection is created.
         startForegroundNotification()
         running = true
+        state = STATE_CONNECTING
 
         thread(name = "init") {
             try {
@@ -209,6 +223,14 @@ class ShareService : Service() {
         ws = http.newWebSocket(Request.Builder().url(wsUrl()).build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 webSocket.send(JSONObject().put("type", "register").put("id", deviceId).put("password", password).toString())
+                // App-level keep-alive: free cloud hosts stay awake only while they receive messages.
+                thread(name = "keepalive") {
+                    while (!stopping) {
+                        try { Thread.sleep(60_000) } catch (_: InterruptedException) { break }
+                        if (stopping || ws !== webSocket) break
+                        webSocket.send("{\"type\":\"ka\"}")
+                    }
+                }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -217,11 +239,13 @@ class ShareService : Service() {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.w(TAG, "ws failure", t)
+                state = STATE_CONNECTING
                 closePeer()
                 retryLater()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                state = STATE_CONNECTING
                 closePeer()
                 retryLater()
             }
@@ -242,10 +266,10 @@ class ShareService : Service() {
 
     private fun handleSignaling(m: JSONObject) {
         when (m.getString("type")) {
-            "registered" -> Log.i(TAG, "registered as ${m.getString("id")}")
+            "registered" -> { Log.i(TAG, "registered as ${m.getString("id")}"); state = STATE_READY }
             "error" -> Log.w(TAG, "server error: ${m.optString("message")}")
-            "peer-joined" -> startPeer()
-            "peer-left" -> closePeer()
+            "peer-joined" -> { state = STATE_CONTROLLED; startPeer() }
+            "peer-left" -> { state = STATE_READY; closePeer() }
             "signal" -> {
                 val d = m.getJSONObject("data")
                 val p = pc ?: return
@@ -267,6 +291,7 @@ class ShareService : Service() {
 
     private fun startPeer() {
         closePeer()
+        fetchIceServers()  // TURN credentials may be short-lived: refresh them for every session
         val cfg = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
@@ -347,6 +372,7 @@ class ShareService : Service() {
         if (stopping) { stopSelf(); return }
         stopping = true
         running = false
+        state = STATE_CONNECTING
         try { ws?.close(1000, "bye") } catch (_: Throwable) {}
         closePeer()
         try { capturer?.stopCapture() } catch (_: Throwable) {}
