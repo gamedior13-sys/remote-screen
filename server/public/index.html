@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Remote">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<title>Remote Screen</title>
+<style>
+  :root {
+    --bg: #0b0d12; --bg2: #11141b; --card: #161a23; --card2: #1c212c; --line: #262c39; --line2: #323a4a;
+    --text: #eef1f7; --muted: #8a93a8; --dim: #5d6579;
+    --accent: #4f8cff; --accent2: #7b5cff; --ok: #2fd17a; --warn: #ffb547; --bad: #ff5d6c;
+    --sat: env(safe-area-inset-top); --sab: env(safe-area-inset-bottom);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior: none; }
+  button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+  input { font: inherit; }
+  .hidden { display: none !important; }
+  svg { display: block; }
+
+  /* ---------- connect screen ---------- */
+  #home { min-height: 100%; padding: calc(var(--sat) + 28px) 18px calc(var(--sab) + 28px);
+    background: radial-gradient(900px 500px at 15% -10%, rgba(79,140,255,.18), transparent 60%),
+                radial-gradient(700px 400px at 110% 10%, rgba(123,92,255,.14), transparent 60%), var(--bg); }
+  .wrap { max-width: 440px; margin: 0 auto; }
+  .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 26px; }
+  .logo { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: 0 8px 24px rgba(79,140,255,.35); }
+  .brand h1 { margin: 0; font-size: 21px; letter-spacing: -.01em; }
+  .brand p { margin: 0; color: var(--muted); font-size: 13px; }
+  .card { background: linear-gradient(180deg, var(--card), var(--bg2)); border: 1px solid var(--line);
+    border-radius: 22px; padding: 20px; box-shadow: 0 20px 50px rgba(0,0,0,.35); }
+  .card h2 { margin: 0 0 4px; font-size: 17px; }
+  .card .sub { margin: 0 0 18px; color: var(--muted); font-size: 13.5px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12.5px; color: var(--muted); margin: 0 0 6px 2px; }
+  .inp { width: 100%; height: 52px; padding: 0 16px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line2); border-radius: 14px; font-size: 17px; outline: none; transition: border-color .15s, box-shadow .15s; }
+  .inp:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(79,140,255,.18); }
+  #id { font-size: 24px; letter-spacing: .12em; font-variant-numeric: tabular-nums; font-weight: 600; text-align: center; }
+  .pwbox { position: relative; }
+  .pwbox .inp { padding-right: 52px; }
+  .pwbox .eye { position: absolute; right: 6px; top: 6px; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; color: var(--muted); }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .check { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13.5px; user-select: none; margin: 4px 0 16px 2px; }
+  .check input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .btn { height: 52px; width: 100%; border-radius: 14px; font-weight: 600; font-size: 16px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff;
+    box-shadow: 0 10px 26px rgba(79,140,255,.32); display: flex; align-items: center; justify-content: center; gap: 10px;
+    transition: transform .08s, opacity .2s; }
+  .btn:active { transform: scale(.98); }
+  .btn:disabled { opacity: .55; }
+  .msg { min-height: 20px; margin-top: 12px; font-size: 13.5px; text-align: center; color: var(--bad); }
+  .msg.info { color: var(--muted); }
+  .section-t { margin: 28px 4px 10px; font-size: 12.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+  .recent { display: flex; flex-direction: column; gap: 8px; }
+  .dev { display: flex; align-items: center; gap: 12px; padding: 12px 8px 12px 14px; background: var(--card);
+    border: 1px solid var(--line); border-radius: 16px; transition: background .15s; }
+  .dev:active { background: var(--card2); }
+  .dev .ic { width: 40px; height: 40px; border-radius: 12px; background: var(--card2); display: grid; place-items: center; color: var(--accent); flex: none; }
+  .dev .meta { flex: 1; min-width: 0; text-align: left; padding: 0; }
+  .dev .nm { font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+  .dev .tm { color: var(--muted); font-size: 12.5px; }
+  .iconbtn { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; color: var(--muted); flex: none; }
+  .iconbtn:active { background: var(--line); }
+  .empty { color: var(--dim); font-size: 13.5px; padding: 6px 4px; }
+  .foot { margin-top: 26px; color: var(--dim); font-size: 12.5px; text-align: center; }
+  .spin { width: 18px; height: 18px; border: 2.5px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: sp .8s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+
+  /* ---------- session screen ---------- */
+  #session { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; }
+  #stage { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
+    padding: calc(var(--sat) + 58px) 0 calc(var(--sab) + 86px); }
+  video { width: 100%; height: 100%; object-fit: contain; touch-action: none; outline: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  .top { position: absolute; left: 0; right: 0; top: 0; padding: calc(var(--sat) + 10px) 12px 10px;
+    display: flex; align-items: center; gap: 8px; background: linear-gradient(180deg, rgba(11,13,18,.95), rgba(11,13,18,.6)); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); z-index: 3; }
+  .chip { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 4px 0 12px; border-radius: 12px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.08); flex: none; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 3px rgba(255,181,71,.2); flex: none; }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(47,209,122,.2); }
+  .chip .idt { font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .05em; font-size: 14px; white-space: nowrap; }
+  .chip .iconbtn { width: 30px; height: 30px; border-radius: 9px; }
+  .grow { flex: 1; }
+  #stats { position: absolute; left: 50%; top: calc(var(--sat) + 62px); transform: translateX(-50%); z-index: 3;
+    color: #c9d1e3; font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap;
+    padding: 4px 10px; border-radius: 999px; background: rgba(11,13,18,.6); border: 1px solid rgba(255,255,255,.06); pointer-events: none; }
+  #stats:empty { display: none; }
+  .tb { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.08); flex: none; }
+  .tb:active { background: rgba(255,255,255,.16); }
+  .tb.danger { color: var(--bad); }
+
+  .nav { position: absolute; left: 50%; bottom: calc(var(--sab) + 14px); transform: translateX(-50%); z-index: 3;
+    display: flex; gap: 6px; padding: 7px; border-radius: 22px;
+    background: rgba(22,26,35,.82); border: 1px solid rgba(255,255,255,.09); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 14px 36px rgba(0,0,0,.5); }
+  .nav button { width: 70px; height: 52px; border-radius: 16px; display: grid; place-items: center; color: #dfe5f2; transition: background .12s, transform .08s; }
+  .nav button:active { background: rgba(255,255,255,.14); transform: scale(.94); }
+  .nav .sep { width: 1px; background: rgba(255,255,255,.08); margin: 8px 2px; }
+
+  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--muted); z-index: 2; pointer-events: none; text-align: center; padding: 20px; }
+  .overlay .spin { width: 34px; height: 34px; border-width: 3px; border-color: rgba(255,255,255,.15); border-top-color: var(--accent); }
+
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; padding: 14px 14px calc(var(--sab) + 14px);
+    background: var(--card); border-top: 1px solid var(--line); border-radius: 20px 20px 0 0; box-shadow: 0 -20px 40px rgba(0,0,0,.5);
+    transform: translateY(110%); transition: transform .22s ease; }
+  .sheet.open { transform: none; }
+  .sheet .grip { width: 38px; height: 4px; border-radius: 2px; background: var(--line2); margin: 0 auto 12px; }
+  .sheet .row { gap: 8px; }
+  .sheet .inp { height: 48px; font-size: 16px; }
+  .kbtn { height: 48px; padding: 0 16px; border-radius: 13px; background: var(--card2); border: 1px solid var(--line2); font-weight: 600; white-space: nowrap; }
+  .kbtn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .keys { display: flex; gap: 8px; margin-top: 10px; }
+  .keys .kbtn { flex: 1; height: 42px; font-weight: 500; font-size: 14px; }
+
+  #toast { position: fixed; left: 50%; top: calc(var(--sat) + 70px); transform: translate(-50%, -20px); opacity: 0; z-index: 10;
+    background: rgba(28,33,44,.96); border: 1px solid var(--line2); padding: 10px 16px; border-radius: 12px; font-size: 14px;
+    transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  @media (max-width: 380px) { .chip .idt { font-size: 13px; letter-spacing: .02em; } .tb { width: 34px; } }
+  @media (min-width: 760px) { #home { padding-top: 10vh; } .nav button { width: 84px; } }
+</style>
+</head>
+<body>
+
+<!-- ================= CONNECT ================= -->
+<section id="home">
+  <div class="wrap">
+    <div class="brand">
+      <div class="logo"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg></div>
+      <div><h1>Remote Screen</h1><p>Điều khiển máy Android từ xa</p></div>
+    </div>
+
+    <div class="card">
+      <h2>Kết nối thiết bị</h2>
+      <p class="sub">Nhập ID và mật khẩu hiển thị trong app Remote Screen trên máy Android.</p>
+      <div class="field">
+        <label for="id">ID thiết bị</label>
+        <input id="id" class="inp" inputmode="numeric" autocomplete="off" placeholder="000 000 000" maxlength="11">
+      </div>
+      <div class="field">
+        <label for="pw">Mật khẩu</label>
+        <div class="pwbox">
+          <input id="pw" class="inp" type="password" autocomplete="current-password" placeholder="••••••">
+          <button class="eye" id="eye" aria-label="Hiện mật khẩu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        </div>
+      </div>
+      <label class="check"><input type="checkbox" id="remember" checked> Ghi nhớ mật khẩu trên trình duyệt này</label>
+      <button class="btn" id="go"><span id="golbl">Kết nối</span></button>
+      <div class="msg" id="err"></div>
+    </div>
+
+    <div class="section-t">Gần đây</div>
+    <div class="recent" id="recent"></div>
+
+    <div class="foot" id="hint">Mẹo: trên iPhone bấm <b>Chia sẻ → Thêm vào MH chính</b> để mở như một app.</div>
+  </div>
+</section>
+
+<!-- ================= SESSION ================= -->
+<section id="session" class="hidden">
+  <div id="stage">
+    <video id="video" autoplay playsinline muted tabindex="0"></video>
+    <div class="overlay" id="ov"><div class="spin"></div><div id="ovtxt">Đang chờ hình ảnh…</div></div>
+  </div>
+
+  <div class="top">
+    <div class="chip">
+      <span class="dot" id="dot"></span>
+      <span class="idt" id="sid">—</span>
+      <button class="iconbtn" id="copySid" aria-label="Copy ID"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+    </div>
+    <span class="grow"></span>
+    <button class="tb" id="kb" aria-label="Bàn phím"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M9 15h6"/></svg></button>
+    <button class="tb" id="notif" aria-label="Thông báo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></button>
+    <button class="tb" id="fs" aria-label="Toàn màn hình"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+    <button class="tb danger" id="bye" aria-label="Ngắt kết nối"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  </div>
+
+  <span id="stats"></span>
+  <div class="nav" id="nav">
+    <button data-key="back" aria-label="Quay lại"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M17 4.5v15L5 12z"/></svg></button>
+    <span class="sep"></span>
+    <button data-key="home" aria-label="Màn hình chính"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="7.5"/></svg></button>
+    <span class="sep"></span>
+    <button data-key="recents" aria-label="Đa nhiệm"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg></button>
+  </div>
+
+  <div class="sheet" id="sheet">
+    <div class="grip"></div>
+    <div class="row">
+      <input id="textin" class="inp" placeholder="Gõ chữ gửi vào ô đang chọn…" autocomplete="off" autocorrect="off" autocapitalize="off">
+      <button class="kbtn primary" id="sendtext">Gửi</button>
+    </div>
+    <div class="keys">
+      <button class="kbtn" data-key="backspace">⌫ Xoá</button>
+      <button class="kbtn" data-key="enter">↵ Enter</button>
+      <button class="kbtn" id="sheetClose">Đóng</button>
+    </div>
+  </div>
+</section>
+
+<div id="toast"></div>
+
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const video = $('#video');
+  const STORE = 'rs.recent.v1';
+  let ws, pc, dc, statsTimer, iceServers = [], current = null;
+
+  // ---------- helpers ----------
+  const fmtId = (id) => String(id).replace(/\D/g, '').slice(0, 9).replace(/(\d{3})(?=\d)/g, '$1 ');
+  const rawId = (s) => String(s).replace(/\D/g, '');
+  let toastT;
+  function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 1800); }
+  function setErr(m, info) { const e = $('#err'); e.textContent = m || ''; e.classList.toggle('info', !!info); }
+  async function copy(text) {
+    try { await navigator.clipboard.writeText(text); }
+    catch {
+      const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch {} ta.remove();
+    }
+    toast('Đã copy ID ' + fmtId(text));
+  }
+  const store = {
+    get() { try { return JSON.parse(localStorage.getItem(STORE)) || []; } catch { return []; } },
+    set(v) { try { localStorage.setItem(STORE, JSON.stringify(v)); } catch {} },
+  };
+  function ago(t) {
+    const s = (Date.now() - t) / 1000;
+    if (s < 60) return 'vừa xong';
+    if (s < 3600) return Math.floor(s / 60) + ' phút trước';
+    if (s < 86400) return Math.floor(s / 3600) + ' giờ trước';
+    return Math.floor(s / 86400) + ' ngày trước';
+  }
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  // ---------- recent devices ----------
+  function renderRecent() {
+    const list = store.get();
+    const box = $('#recent');
+    if (!list.length) { box.innerHTML = '<div class="empty">Chưa có thiết bị nào. Kết nối lần đầu để lưu vào đây.</div>'; return; }
+    box.innerHTML = list.map((d) => `
+      <div class="dev" data-id="${esc(d.id)}">
+        <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg></div>
+        <button class="meta" data-act="open"><div class="nm">${esc(fmtId(d.id))}</div><div class="tm">${esc(ago(d.last))}${d.pw ? ' · đã lưu mật khẩu' : ''}</div></button>
+        <button class="iconbtn" data-act="copy" aria-label="Copy ID"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+        <button class="iconbtn" data-act="del" aria-label="Xoá"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
+      </div>`).join('');
+  }
+  $('#recent').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const id = b.closest('.dev').dataset.id;
+    const d = store.get().find((x) => x.id === id);
+    if (b.dataset.act === 'copy') return copy(id);
+    if (b.dataset.act === 'del') { store.set(store.get().filter((x) => x.id !== id)); return renderRecent(); }
+    $('#id').value = fmtId(id); $('#pw').value = (d && d.pw) || '';
+    if (d && d.pw) start(); else $('#pw').focus();
+  });
+  function remember(id, pw) {
+    const keep = $('#remember').checked;
+    const list = store.get().filter((x) => x.id !== id);
+    list.unshift({ id, pw: keep ? pw : '', last: Date.now() });
+    store.set(list.slice(0, 12));
+  }
+
+  // ---------- connect ----------
+  $('#id').addEventListener('input', (e) => { const el = e.target; el.value = fmtId(el.value); });
+  $('#eye').addEventListener('click', () => { const p = $('#pw'); p.type = p.type === 'password' ? 'text' : 'password'; });
+
+  function busy(on, label) {
+    $('#go').disabled = on;
+    $('#golbl').textContent = label || 'Kết nối';
+    const sp = $('#go .spin');
+    if (on && !sp) $('#go').insertAdjacentHTML('afterbegin', '<span class="spin"></span>');
+    if (!on && sp) sp.remove();
+  }
+
+  async function start() {
+    if ($('#go').disabled) return;
+    setErr('');
+    const id = rawId($('#id').value);
+    const password = $('#pw').value;
+    if (!/^\d{9}$/.test(id)) return setErr('ID gồm 9 chữ số');
+    if (password.length < 6) return setErr('Mật khẩu tối thiểu 6 ký tự');
+    busy(true, 'Đang kết nối…');
+    const slow = setTimeout(() => setErr('Đang đánh thức máy chủ, lần đầu có thể mất khoảng 30–50 giây…', true), 3500);
+    try {
+      const r = await fetch('config', { cache: 'no-store' });
+      iceServers = (await r.json()).iceServers;
+    } catch { iceServers = [{ urls: 'stun:stun.l.google.com:19302' }]; }
+    clearTimeout(slow);
+    setErr('');
+
+    current = { id, password };
+    const base = location.pathname.replace(/[^/]*$/, '');
+    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${base}ws`);
+    ws.onopen = () => ws.send(JSON.stringify({ type: 'connect', id, password }));
+    ws.onmessage = (e) => onSignaling(JSON.parse(e.data));
+    ws.onclose = () => { if (!$('#session').classList.contains('hidden')) endSession('Mất kết nối tới máy chủ'); else busy(false); };
+    ws.onerror = () => { setErr('Không kết nối được máy chủ'); busy(false); };
+  }
+
+  async function onSignaling(m) {
+    if (m.type === 'error') {
+      const map = { denied: 'Sai ID hoặc mật khẩu, hoặc máy Android chưa bật chia sẻ', busy: 'Máy này đang được người khác điều khiển', rate_limited: 'Sai quá nhiều lần, thử lại sau ít phút' };
+      setErr(map[m.code] || m.message); busy(false); return;
+    }
+    if (m.type === 'connected') {
+      remember(current.id, current.password);
+      openSession();
+      createPeer();
+      return;
+    }
+    if (m.type === 'peer-left') return endSession('Máy Android đã ngừng chia sẻ');
+    if (m.type === 'signal' && pc) {
+      const d = m.data;
+      if (d.sdp) {
+        await pc.setRemoteDescription(d.sdp);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: 'signal', data: { sdp: pc.localDescription } }));
+      } else if (d.candidate) {
+        try { await pc.addIceCandidate(d.candidate); } catch {}
+      }
+    }
+  }
+
+  function openSession() {
+    $('#home').classList.add('hidden');
+    $('#session').classList.remove('hidden');
+    $('#sid').textContent = fmtId(current.id);
+    $('#dot').classList.remove('ok');
+    $('#ov').classList.remove('hidden');
+    $('#ovtxt').textContent = 'Đang thiết lập kết nối…';
+    $('#stats').textContent = '';
+    busy(false);
+  }
+
+  function createPeer() {
+    pc = new RTCPeerConnection({ iceServers });
+    pc.onicecandidate = (e) => { if (e.candidate && ws) ws.send(JSON.stringify({ type: 'signal', data: { candidate: e.candidate } })); };
+    pc.ondatachannel = (e) => { dc = e.channel; };
+    pc.ontrack = (e) => {
+      video.srcObject = e.streams[0];
+      const r = e.receiver;
+      try { if ('jitterBufferTarget' in r) r.jitterBufferTarget = 0; } catch {}
+      try { if ('playoutDelayHint' in r) r.playoutDelayHint = 0; } catch {}
+      video.play().catch(() => {});
+      $('#ovtxt').textContent = 'Đang chờ hình ảnh…';
+    };
+    pc.onconnectionstatechange = () => {
+      const s = pc && pc.connectionState;
+      if (s === 'connected') $('#dot').classList.add('ok');
+      if (s === 'disconnected') { $('#dot').classList.remove('ok'); $('#ovtxt').textContent = 'Mạng chập chờn, đang thử lại…'; }
+      if (s === 'failed') endSession('Không truyền được hình ảnh qua mạng hiện tại (cần máy chủ trung chuyển TURN).');
+    };
+    statsTimer = setInterval(updateStats, 1000);
+  }
+  video.addEventListener('loadeddata', () => $('#ov').classList.add('hidden'));
+
+  let last = { bytes: 0, t: 0 };
+  async function updateStats() {
+    if (!pc) return;
+    const stats = await pc.getStats();
+    let rtt = null, fps = null, bytes = null, relay = false, pairId = null;
+    stats.forEach((s) => {
+      if (s.type === 'transport' && s.selectedCandidatePairId) pairId = s.selectedCandidatePairId;
+      if (s.type === 'inbound-rtp' && s.kind === 'video') { fps = s.framesPerSecond; bytes = s.bytesReceived; }
+    });
+    stats.forEach((s) => {
+      if (s.type === 'candidate-pair' && (s.id === pairId || (!pairId && s.nominated && s.state === 'succeeded'))) {
+        if (s.currentRoundTripTime != null) rtt = Math.round(s.currentRoundTripTime * 1000);
+        const lc = stats.get(s.localCandidateId);
+        relay = !!(lc && lc.candidateType === 'relay');
+      }
+    });
+    let kbps = null;
+    const now = performance.now();
+    if (bytes != null && last.t) kbps = Math.round(((bytes - last.bytes) * 8) / (now - last.t));
+    if (bytes != null) last = { bytes, t: now };
+    const parts = [];
+    if (rtt != null) parts.push(rtt + ' ms');
+    if (fps != null) parts.push(Math.round(fps) + ' fps');
+    if (kbps != null) parts.push(kbps >= 1000 ? (kbps / 1000).toFixed(1) + ' Mbps' : kbps + ' kbps');
+    if (rtt != null) parts.push(relay ? 'qua TURN' : 'P2P');
+    $('#stats').textContent = parts.join(' · ');
+  }
+
+  function endSession(msg) {
+    clearInterval(statsTimer);
+    try { dc && dc.close(); } catch {}
+    try { pc && pc.close(); } catch {}
+    try { ws && (ws.onclose = null, ws.close()); } catch {}
+    pc = dc = ws = null;
+    video.srcObject = null;
+    $('#sheet').classList.remove('open');
+    $('#session').classList.add('hidden');
+    $('#home').classList.remove('hidden');
+    busy(false);
+    setErr(msg || '');
+    renderRecent();
+    try { if (document.fullscreenElement) document.exitFullscreen(); } catch {}
+  }
+
+  // ---------- control ----------
+  const sendCtl = (o) => { if (dc && dc.readyState === 'open') dc.send(JSON.stringify(o)); };
+  function haptic() { try { navigator.vibrate && navigator.vibrate(8); } catch {} }
+
+  function norm(ev) {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw) return null;
+    const r = video.getBoundingClientRect();
+    const scale = Math.min(r.width / vw, r.height / vh);
+    const w = vw * scale, h = vh * scale;
+    const ox = r.left + (r.width - w) / 2, oy = r.top + (r.height - h) / 2;
+    const x = (ev.clientX - ox) / w, y = (ev.clientY - oy) / h;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+    return { x, y };
+  }
+
+  let down = null;
+  video.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (down) return; // ignore extra fingers
+    try { video.setPointerCapture(e.pointerId); } catch {}
+    const p = norm(e);
+    down = p ? { ...p, t: performance.now(), id: e.pointerId } : null;
+    if (e.pointerType === 'mouse') video.focus();
+  });
+  video.addEventListener('pointerup', (e) => {
+    if (!down || e.pointerId !== down.id) return;
+    const p = norm(e) || down;
+    const dt = Math.max(1, Math.round(performance.now() - down.t));
+    const dist = Math.hypot(p.x - down.x, p.y - down.y);
+    if (dist < 0.015) sendCtl({ t: 'tap', x: down.x, y: down.y, d: Math.min(dt, 1500) });
+    else sendCtl({ t: 'swipe', x1: down.x, y1: down.y, x2: p.x, y2: p.y, d: Math.min(Math.max(dt, 60), 1500) });
+    down = null;
+  });
+  video.addEventListener('pointercancel', () => { down = null; });
+  video.addEventListener('contextmenu', (e) => e.preventDefault());
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('touchmove', (e) => {
+    if (!$('#session').classList.contains('hidden') && !e.target.closest('.sheet')) e.preventDefault();
+  }, { passive: false });
+
+  let wheelAt = 0;
+  video.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const now = performance.now();
+    if (now - wheelAt < 250) return;
+    wheelAt = now;
+    const p = norm(e); if (!p) return;
+    const dy = Math.sign(e.deltaY) * 0.25;
+    const c = (v) => Math.min(0.95, Math.max(0.05, v));
+    sendCtl({ t: 'swipe', x1: p.x, y1: c(p.y + dy / 2), x2: p.x, y2: c(p.y - dy / 2), d: 200 });
+  }, { passive: false });
+
+  video.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === 'Backspace') sendCtl({ t: 'key', k: 'backspace' });
+    else if (e.key === 'Enter') sendCtl({ t: 'key', k: 'enter' });
+    else if (e.key === 'Escape') sendCtl({ t: 'key', k: 'back' });
+    else if (e.key.length === 1) sendCtl({ t: 'text', s: e.key });
+    else return;
+    e.preventDefault();
+  });
+
+  document.querySelectorAll('[data-key]').forEach((b) => b.addEventListener('click', () => { haptic(); sendCtl({ t: 'key', k: b.dataset.key }); }));
+  $('#notif').addEventListener('click', () => { haptic(); sendCtl({ t: 'key', k: 'notifications' }); });
+
+  const sendText = () => { const v = $('#textin').value; if (v) { sendCtl({ t: 'text', s: v }); $('#textin').value = ''; toast('Đã gửi'); } };
+  $('#sendtext').addEventListener('click', sendText);
+  $('#textin').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendText(); } });
+  $('#kb').addEventListener('click', () => { const s = $('#sheet'); s.classList.toggle('open'); if (s.classList.contains('open')) $('#textin').focus(); });
+  $('#sheetClose').addEventListener('click', () => { $('#sheet').classList.remove('open'); $('#textin').blur(); });
+
+  if (!document.documentElement.requestFullscreen) $('#fs').classList.add('hidden');
+  $('#fs').addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else $('#session').requestFullscreen().catch(() => {}); });
+  $('#bye').addEventListener('click', () => endSession(''));
+  $('#copySid').addEventListener('click', () => current && copy(current.id));
+  $('#go').addEventListener('click', start);
+  $('#pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') start(); });
+  $('#id').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#pw').focus(); });
+
+  const qid = new URLSearchParams(location.search).get('id');
+  if (qid) $('#id').value = fmtId(qid);
+  if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) $('#hint').classList.add('hidden');
+  renderRecent();
+})();
+</script>
+</body>
+</html>
