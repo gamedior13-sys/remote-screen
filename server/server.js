@@ -27,7 +27,15 @@ const METERED_APP = process.env.METERED_APP || '';       // e.g. "myapp" for mya
 const METERED_API_KEY = process.env.METERED_API_KEY || '';
 const CF_TURN_KEY_ID = process.env.CF_TURN_KEY_ID || '';
 const CF_TURN_TOKEN = process.env.CF_TURN_TOKEN || '';
-const HOSTED_TURN = Boolean((METERED_APP && METERED_API_KEY) || (CF_TURN_KEY_ID && CF_TURN_TOKEN));
+// Any TURN service with fixed credentials (e.g. ExpressTURN free: 1000 GB/month).
+// EXTRA_TURN_URLS is comma separated, e.g. "turn:relay1.expressturn.com:3478,turn:relay1.expressturn.com:3478?transport=tcp"
+const EXTRA_TURN_URLS = (process.env.EXTRA_TURN_URLS || '').split(',').map((s) => s.trim()).filter(Boolean);
+const EXTRA_TURN_USER = (process.env.EXTRA_TURN_USER || '').trim();
+const EXTRA_TURN_PASS = (process.env.EXTRA_TURN_PASS || '').trim();
+const EXTRA_TURN_NAME = process.env.EXTRA_TURN_NAME || 'TURN';
+const EXTRA_TURN_QUOTA_GB = Number(process.env.EXTRA_TURN_QUOTA_GB || 0);
+const EXTRA_TURN = EXTRA_TURN_URLS.length > 0 && !!EXTRA_TURN_USER && !!EXTRA_TURN_PASS;
+const HOSTED_TURN = EXTRA_TURN || Boolean((METERED_APP && METERED_API_KEY) || (CF_TURN_KEY_ID && CF_TURN_TOKEN));
 // Built-in TURN only makes sense when running on a PC in the LAN (not on Render & co).
 const LOCAL_TURN = !HOSTED_TURN && !process.env.RENDER && process.env.LOCAL_TURN !== '0';
 
@@ -87,7 +95,9 @@ async function hostedTurn() {
 async function iceServersFor(req) {
   if (CUSTOM_ICE) return CUSTOM_ICE;
   const list = [{ urls: 'stun:stun.l.google.com:19302' }];
-  if (HOSTED_TURN) list.push(...(await hostedTurn()));
+  // A fixed-credential TURN (bigger free quota) replaces the metered one when configured.
+  if (EXTRA_TURN) list.push({ urls: EXTRA_TURN_URLS, username: EXTRA_TURN_USER, credential: EXTRA_TURN_PASS });
+  else if (HOSTED_TURN) list.push(...(await hostedTurn()));
   if (LOCAL_TURN) {
     const host = String(req.headers.host || '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
     const hosts = [...new Set([host, ...localIPv4s()].filter(Boolean))];
@@ -109,6 +119,7 @@ app.get('/healthz', (_req, res) => res.send('ok'));
 const METERED_SECRET_KEY = process.env.METERED_SECRET_KEY || '';
 let usageCache = { data: null, until: 0 };
 app.get('/usage', async (_req, res) => {
+  if (EXTRA_TURN) return res.json({ available: !!EXTRA_TURN_QUOTA_GB, provider: EXTRA_TURN_NAME, quotaMB: EXTRA_TURN_QUOTA_GB * 1024, usedMB: null });
   if (!METERED_APP || !METERED_SECRET_KEY) return res.json({ available: false });
   if (usageCache.data && Date.now() < usageCache.until) return res.json(usageCache.data);
   try {
@@ -119,7 +130,7 @@ app.get('/usage', async (_req, res) => {
       console.warn(`usage: Metered answered HTTP ${r.status}: ${JSON.stringify(j).slice(0, 200)}`);
       return res.json({ available: false });
     }
-    const data = { available: true, quotaMB: j.quotaInGB * 1024, usedMB: (j.usageInGB || 0) * 1024 };
+    const data = { available: true, provider: 'Metered', quotaMB: j.quotaInGB * 1024, usedMB: (j.usageInGB || 0) * 1024 };
     usageCache = { data, until: Date.now() + 60e3 };
     res.json(data);
   } catch (e) {
