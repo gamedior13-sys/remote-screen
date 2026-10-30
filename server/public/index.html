@@ -18,6 +18,7 @@
     --text: #eef1f7; --muted: #8a93a8; --dim: #5d6579;
     --accent: #4f8cff; --accent2: #7b5cff; --ok: #2fd17a; --warn: #ffb547; --bad: #ff5d6c;
     --sat: env(safe-area-inset-top); --sab: env(safe-area-inset-bottom);
+    --sal: env(safe-area-inset-left); --sar: env(safe-area-inset-right);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
@@ -46,8 +47,10 @@
   .field label { display: block; font-size: 12.5px; color: var(--muted); margin: 0 0 6px 2px; }
   .inp { width: 100%; height: 52px; padding: 0 16px; background: var(--bg); color: var(--text);
     border: 1px solid var(--line2); border-radius: 14px; font-size: 17px; outline: none; transition: border-color .15s, box-shadow .15s; }
+  .inp::placeholder { color: var(--dim); }
   .inp:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(79,140,255,.18); }
   #id { font-size: 24px; letter-spacing: .12em; font-variant-numeric: tabular-nums; font-weight: 600; text-align: center; }
+  #id::placeholder { letter-spacing: .12em; }
   .pwbox { position: relative; }
   .pwbox .inp { padding-right: 52px; }
   .pwbox .eye { position: absolute; right: 6px; top: 6px; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; color: var(--muted); }
@@ -75,15 +78,16 @@
   .iconbtn:active { background: var(--line); }
   .empty { color: var(--dim); font-size: 13.5px; padding: 6px 4px; }
   .foot { margin-top: 26px; color: var(--dim); font-size: 12.5px; text-align: center; }
+  .foot a { color: var(--muted); }
   .spin { width: 18px; height: 18px; border: 2.5px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: sp .8s linear infinite; }
   @keyframes sp { to { transform: rotate(360deg); } }
 
   /* ---------- session screen ---------- */
-  #session { position: fixed; inset: 0; background: #000; display: flex; flex-direction: column; }
-  #stage { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
-    padding: calc(var(--sat) + 58px) 0 calc(var(--sab) + 86px); }
-  video { width: 100%; height: 100%; object-fit: contain; touch-action: none; outline: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-  .top { position: absolute; left: 0; right: 0; top: 0; padding: calc(var(--sat) + 10px) 12px 10px;
+  #session { position: fixed; inset: 0; background: #000; overflow: hidden; }
+  #vbox { position: absolute; left: var(--sal); right: var(--sar); top: calc(var(--sat) + 58px); bottom: calc(var(--sab) + 84px);
+    overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  video { position: absolute; transform-origin: 50% 50%; outline: none; pointer-events: none; background: #000; }
+  .top { position: absolute; left: 0; right: 0; top: 0; padding: calc(var(--sat) + 10px) calc(var(--sar) + 12px) 10px calc(var(--sal) + 12px);
     display: flex; align-items: center; gap: 8px; background: linear-gradient(180deg, rgba(11,13,18,.95), rgba(11,13,18,.6)); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); z-index: 3; }
   .chip { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 4px 0 12px; border-radius: 12px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.08); flex: none; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 3px rgba(255,181,71,.2); flex: none; }
@@ -91,13 +95,19 @@
   .chip .idt { font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .05em; font-size: 14px; white-space: nowrap; }
   .chip .iconbtn { width: 30px; height: 30px; border-radius: 9px; }
   .grow { flex: 1; }
-  #stats { position: absolute; left: 50%; top: calc(var(--sat) + 62px); transform: translateX(-50%); z-index: 3;
-    color: #c9d1e3; font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap;
-    padding: 4px 10px; border-radius: 999px; background: rgba(11,13,18,.6); border: 1px solid rgba(255,255,255,.06); pointer-events: none; }
-  #stats:empty { display: none; }
   .tb { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.08); flex: none; }
   .tb:active { background: rgba(255,255,255,.16); }
   .tb.danger { color: var(--bad); }
+
+  .pills { position: absolute; left: 50%; top: calc(var(--sat) + 62px); transform: translateX(-50%); z-index: 3;
+    display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; max-width: calc(100% - 24px); }
+  .pill { color: #c9d1e3; font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap;
+    padding: 4px 10px; border-radius: 999px; background: rgba(11,13,18,.65); border: 1px solid rgba(255,255,255,.07); }
+  .pill:empty { display: none; }
+  .pill.warn { color: #ffd38a; border-color: rgba(255,181,71,.35); }
+  .pill.bad { color: #ffb3ba; border-color: rgba(255,93,108,.45); }
+  #zoomchip { position: absolute; right: calc(var(--sar) + 12px); bottom: calc(var(--sab) + 96px); z-index: 3;
+    padding: 6px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600; background: rgba(22,26,35,.85); border: 1px solid rgba(255,255,255,.12); }
 
   .nav { position: absolute; left: 50%; bottom: calc(var(--sab) + 14px); transform: translateX(-50%); z-index: 3;
     display: flex; gap: 6px; padding: 7px; border-radius: 22px;
@@ -109,8 +119,9 @@
 
   .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--muted); z-index: 2; pointer-events: none; text-align: center; padding: 20px; }
   .overlay .spin { width: 34px; height: 34px; border-width: 3px; border-color: rgba(255,255,255,.15); border-top-color: var(--accent); }
+  .overlay.dim { background: rgba(0,0,0,.55); }
 
-  .sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; padding: 14px 14px calc(var(--sab) + 14px);
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; padding: 14px calc(var(--sar) + 14px) calc(var(--sab) + 14px) calc(var(--sal) + 14px);
     background: var(--card); border-top: 1px solid var(--line); border-radius: 20px 20px 0 0; box-shadow: 0 -20px 40px rgba(0,0,0,.5);
     transform: translateY(110%); transition: transform .22s ease; }
   .sheet.open { transform: none; }
@@ -122,13 +133,40 @@
   .keys { display: flex; gap: 8px; margin-top: 10px; }
   .keys .kbtn { flex: 1; height: 42px; font-weight: 500; font-size: 14px; }
 
+  .menu { position: absolute; top: calc(var(--sat) + 56px); right: calc(var(--sar) + 10px); z-index: 6; width: 268px; max-width: calc(100% - 20px);
+    background: rgba(22,26,35,.97); border: 1px solid var(--line2); border-radius: 18px; padding: 10px; box-shadow: 0 20px 50px rgba(0,0,0,.6);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+  .menu h4 { margin: 6px 6px 8px; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+  .seg { display: flex; gap: 4px; padding: 4px; background: var(--bg); border-radius: 12px; border: 1px solid var(--line); }
+  .seg button { flex: 1; padding: 8px 4px; border-radius: 9px; font-size: 13px; color: var(--muted); line-height: 1.2; }
+  .seg button small { display: block; font-size: 10.5px; color: var(--dim); margin-top: 2px; }
+  .seg button.on { background: var(--card2); color: var(--text); box-shadow: 0 1px 0 rgba(255,255,255,.06) inset; }
+  .seg button.on small { color: var(--muted); }
+  .mitem { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 8px; border-radius: 11px; text-align: left; font-size: 14.5px; }
+  .mitem:active { background: var(--card2); }
+  .mitem svg { color: var(--muted); }
+  .mnote { font-size: 12px; color: var(--dim); margin: 8px 6px 2px; }
+  .msep { height: 1px; background: var(--line); margin: 8px 2px; }
+
   #toast { position: fixed; left: 50%; top: calc(var(--sat) + 70px); transform: translate(-50%, -20px); opacity: 0; z-index: 10;
     background: rgba(28,33,44,.96); border: 1px solid var(--line2); padding: 10px 16px; border-radius: 12px; font-size: 14px;
-    transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap; }
+    transition: opacity .2s, transform .2s; pointer-events: none; max-width: calc(100% - 32px); text-align: center; }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
 
   @media (max-width: 380px) { .chip .idt { font-size: 13px; letter-spacing: .02em; } .tb { width: 34px; } }
   @media (min-width: 760px) { #home { padding-top: 10vh; } .nav button { width: 84px; } }
+
+  /* phone held sideways: slim top bar, navigation on the right edge */
+  @media (orientation: landscape) and (max-height: 540px) {
+    .top { padding-top: calc(var(--sat) + 6px); padding-bottom: 6px; }
+    #vbox { top: calc(var(--sat) + 50px); bottom: var(--sab); right: calc(var(--sar) + 82px); }
+    .pills { top: calc(var(--sat) + 54px); }
+    .nav { left: auto; right: calc(var(--sar) + 10px); top: 50%; bottom: auto; transform: translateY(-50%); flex-direction: column; }
+    .nav button { width: 56px; height: 56px; }
+    .nav .sep { width: auto; height: 1px; margin: 2px 8px; }
+    #zoomchip { right: calc(var(--sar) + 92px); bottom: calc(var(--sab) + 12px); }
+    .menu { top: calc(var(--sat) + 50px); max-height: calc(100% - 60px); overflow: auto; }
+  }
 </style>
 </head>
 <body>
@@ -146,12 +184,12 @@
       <p class="sub">Nhập ID và mật khẩu hiển thị trong app Remote Screen trên máy Android.</p>
       <div class="field">
         <label for="id">ID thiết bị</label>
-        <input id="id" class="inp" inputmode="numeric" autocomplete="off" placeholder="000 000 000" maxlength="11">
+        <input id="id" class="inp" inputmode="numeric" autocomplete="off" placeholder="Nhập ID" maxlength="11">
       </div>
       <div class="field">
         <label for="pw">Mật khẩu</label>
         <div class="pwbox">
-          <input id="pw" class="inp" type="password" autocomplete="current-password" placeholder="••••••">
+          <input id="pw" class="inp" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu">
           <button class="eye" id="eye" aria-label="Hiện mật khẩu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
         </div>
       </div>
@@ -163,16 +201,17 @@
     <div class="section-t">Gần đây</div>
     <div class="recent" id="recent"></div>
 
-    <div class="foot" id="hint">Mẹo: trên iPhone bấm <b>Chia sẻ → Thêm vào MH chính</b> để mở như một app.</div>
+    <div class="foot"><span id="hint">Mẹo: trên iPhone bấm <b>Chia sẻ → Thêm vào MH chính</b> để mở như một app.<br></span>
+      <a href="remote-screen.apk">Tải app cho máy Android</a></div>
   </div>
 </section>
 
 <!-- ================= SESSION ================= -->
 <section id="session" class="hidden">
-  <div id="stage">
+  <div id="vbox">
     <video id="video" autoplay playsinline muted tabindex="0"></video>
-    <div class="overlay" id="ov"><div class="spin"></div><div id="ovtxt">Đang chờ hình ảnh…</div></div>
   </div>
+  <div class="overlay" id="ov"><div class="spin"></div><div id="ovtxt">Đang chờ hình ảnh…</div></div>
 
   <div class="top">
     <div class="chip">
@@ -182,18 +221,39 @@
     </div>
     <span class="grow"></span>
     <button class="tb" id="kb" aria-label="Bàn phím"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M9 15h6"/></svg></button>
-    <button class="tb" id="notif" aria-label="Thông báo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></button>
-    <button class="tb" id="fs" aria-label="Toàn màn hình"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+    <button class="tb" id="more" aria-label="Tuỳ chọn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h10M4 18h16"/><circle cx="18" cy="12" r="2"/></svg></button>
     <button class="tb danger" id="bye" aria-label="Ngắt kết nối"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
   </div>
 
-  <span id="stats"></span>
+  <div class="pills"><span class="pill" id="stats"></span><span class="pill" id="quota"></span></div>
+  <button id="zoomchip" class="hidden">1.0× · Đặt lại</button>
+
   <div class="nav" id="nav">
     <button data-key="back" aria-label="Quay lại"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M17 4.5v15L5 12z"/></svg></button>
     <span class="sep"></span>
     <button data-key="home" aria-label="Màn hình chính"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="7.5"/></svg></button>
     <span class="sep"></span>
     <button data-key="recents" aria-label="Đa nhiệm"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg></button>
+  </div>
+
+  <div class="menu hidden" id="menu">
+    <h4>Chất lượng hình</h4>
+    <div class="seg" id="qseg">
+      <button data-q="eco">Tiết kiệm<small>15 fps</small></button>
+      <button data-q="bal">Cân bằng<small>30 fps</small></button>
+      <button data-q="hi">Mượt<small>60 fps</small></button>
+    </div>
+    <div class="mnote" id="qnote"></div>
+    <h4 style="margin-top:12px">Xoay hình</h4>
+    <div class="seg" id="rseg">
+      <button data-r="auto">Tự động</button>
+      <button data-r="0">Đứng</button>
+      <button data-r="90">Nằm ngang</button>
+    </div>
+    <div class="msep"></div>
+    <button class="mitem" id="notif"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>Kéo thanh thông báo</button>
+    <button class="mitem" id="fs"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Toàn màn hình</button>
+    <div class="mnote">Dùng 2 ngón để phóng to hoặc kéo hình.</div>
   </div>
 
   <div class="sheet" id="sheet">
@@ -215,15 +275,28 @@
 <script>
 (() => {
   const $ = (s) => document.querySelector(s);
-  const video = $('#video');
+  const video = $('#video'), vbox = $('#vbox');
   const STORE = 'rs.recent.v1';
-  let ws, pc, dc, statsTimer, iceServers = [], current = null;
+  const QUALITY = {
+    eco: { fps: 15, long: 720, br: 700000, label: 'Tiết kiệm' },
+    bal: { fps: 30, long: 1280, br: 2500000, label: 'Cân bằng' },
+    hi: { fps: 60, long: 1280, br: 6000000, label: 'Mượt' },
+  };
+  const RECONNECT_MS = 120000;
+
+  let ws, pc, dc, statsTimer, usageTimer, iceServers = [], current = null;
+  let inSession = false, reconnecting = false, reconnectSince = 0, retryTimer = null, discTimer = null;
+  let relay = null, lastKbps = 0, usage = null, wakeLock = null;
 
   // ---------- helpers ----------
   const fmtId = (id) => String(id).replace(/\D/g, '').slice(0, 9).replace(/(\d{3})(?=\d)/g, '$1 ');
   const rawId = (s) => String(s).replace(/\D/g, '');
+  const pref = {
+    get(k, d) { try { const v = localStorage.getItem('rs.' + k); return v == null ? d : v; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('rs.' + k, v); } catch {} },
+  };
   let toastT;
-  function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 1800); }
+  function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2200); }
   function setErr(m, info) { const e = $('#err'); e.textContent = m || ''; e.classList.toggle('info', !!info); }
   async function copy(text) {
     try { await navigator.clipboard.writeText(text); }
@@ -245,6 +318,7 @@
     return Math.floor(s / 86400) + ' ngày trước';
   }
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const wsUrl = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${location.pathname.replace(/[^/]*$/, '')}ws`;
 
   // ---------- recent devices ----------
   function renderRecent() {
@@ -287,6 +361,13 @@
     if (!on && sp) sp.remove();
   }
 
+  async function loadConfig() {
+    try {
+      const r = await fetch('config', { cache: 'no-store' });
+      iceServers = (await r.json()).iceServers;
+    } catch { iceServers = [{ urls: 'stun:stun.l.google.com:19302' }]; }
+  }
+
   async function start() {
     if ($('#go').disabled) return;
     setErr('');
@@ -296,34 +377,41 @@
     if (password.length < 6) return setErr('Mật khẩu tối thiểu 6 ký tự');
     busy(true, 'Đang kết nối…');
     const slow = setTimeout(() => setErr('Đang đánh thức máy chủ, lần đầu có thể mất khoảng 30–50 giây…', true), 3500);
-    try {
-      const r = await fetch('config', { cache: 'no-store' });
-      iceServers = (await r.json()).iceServers;
-    } catch { iceServers = [{ urls: 'stun:stun.l.google.com:19302' }]; }
+    await loadConfig();
     clearTimeout(slow);
     setErr('');
-
     current = { id, password };
-    const base = location.pathname.replace(/[^/]*$/, '');
-    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${base}ws`);
-    ws.onopen = () => ws.send(JSON.stringify({ type: 'connect', id, password }));
-    ws.onmessage = (e) => onSignaling(JSON.parse(e.data));
-    ws.onclose = () => { if (!$('#session').classList.contains('hidden')) endSession('Mất kết nối tới máy chủ'); else busy(false); };
-    ws.onerror = () => { setErr('Không kết nối được máy chủ'); busy(false); };
+    connect();
+  }
+
+  function connect() {
+    try { ws && (ws.onclose = null, ws.close()); } catch {}
+    ws = new WebSocket(wsUrl());
+    const me = ws;
+    ws.onopen = () => me.send(JSON.stringify({ type: 'connect', id: current.id, password: current.password }));
+    ws.onmessage = (e) => { if (ws === me) onSignaling(JSON.parse(e.data)); };
+    ws.onclose = () => {
+      if (ws !== me) return;
+      if (inSession) scheduleReconnect('Mất kết nối tới máy chủ');
+      else { busy(false); if (!$('#err').textContent) setErr('Không kết nối được máy chủ'); }
+    };
   }
 
   async function onSignaling(m) {
     if (m.type === 'error') {
+      if (m.code === 'taken_over') return endSession('Máy này vừa được điều khiển từ một thiết bị/tab khác.');
+      if (inSession) return scheduleReconnect(m.code === 'denied' ? 'Đang chờ máy Android kết nối lại…' : 'Đang kết nối lại…');
       const map = { denied: 'Sai ID hoặc mật khẩu, hoặc máy Android chưa bật chia sẻ', busy: 'Máy này đang được người khác điều khiển', rate_limited: 'Sai quá nhiều lần, thử lại sau ít phút' };
       setErr(map[m.code] || m.message); busy(false); return;
     }
     if (m.type === 'connected') {
-      remember(current.id, current.password);
-      openSession();
+      if (!inSession) { remember(current.id, current.password); openSession(); }
+      reconnecting = false; reconnectSince = 0;
+      showOverlay('Đang thiết lập kết nối…');
       createPeer();
       return;
     }
-    if (m.type === 'peer-left') return endSession('Máy Android đã ngừng chia sẻ');
+    if (m.type === 'peer-left') return scheduleReconnect('Máy Android tạm mất kết nối, đang chờ…');
     if (m.type === 'signal' && pc) {
       const d = m.data;
       if (d.sdp) {
@@ -337,44 +425,88 @@
     }
   }
 
+  function showOverlay(text, dim) {
+    $('#ov').classList.remove('hidden');
+    $('#ov').classList.toggle('dim', !!dim);
+    $('#ovtxt').textContent = text;
+  }
+
   function openSession() {
+    inSession = true;
     $('#home').classList.add('hidden');
     $('#session').classList.remove('hidden');
     $('#sid').textContent = fmtId(current.id);
     $('#dot').classList.remove('ok');
-    $('#ov').classList.remove('hidden');
-    $('#ovtxt').textContent = 'Đang thiết lập kết nối…';
-    $('#stats').textContent = '';
+    $('#stats').textContent = ''; $('#quota').textContent = '';
+    relay = null; usage = null;
+    resetZoom();
     busy(false);
+    keepAwake();
+    syncMenu();
+  }
+
+  function closePeer() {
+    clearInterval(statsTimer); clearTimeout(discTimer);
+    try { dc && dc.close(); } catch {}
+    try { pc && pc.close(); } catch {}
+    pc = dc = null;
+  }
+
+  function scheduleReconnect(text) {
+    if (!inSession) return;
+    if (!reconnectSince) reconnectSince = Date.now();
+    if (Date.now() - reconnectSince > RECONNECT_MS) return endSession('Không kết nối lại được. Kiểm tra máy Android còn đang chia sẻ không.');
+    reconnecting = true;
+    closePeer();
+    $('#dot').classList.remove('ok');
+    showOverlay(text || 'Đang kết nối lại…', true);
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(async () => { if (!inSession) return; await loadConfig(); connect(); }, 2500);
   }
 
   function createPeer() {
+    closePeer();
     pc = new RTCPeerConnection({ iceServers });
-    pc.onicecandidate = (e) => { if (e.candidate && ws) ws.send(JSON.stringify({ type: 'signal', data: { candidate: e.candidate } })); };
-    pc.ondatachannel = (e) => { dc = e.channel; };
+    const me = pc;
+    pc.onicecandidate = (e) => { if (e.candidate && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'signal', data: { candidate: e.candidate } })); };
+    pc.ondatachannel = (e) => { dc = e.channel; dc.onopen = () => sendQuality(); };
     pc.ontrack = (e) => {
       video.srcObject = e.streams[0];
       const r = e.receiver;
       try { if ('jitterBufferTarget' in r) r.jitterBufferTarget = 0; } catch {}
       try { if ('playoutDelayHint' in r) r.playoutDelayHint = 0; } catch {}
       video.play().catch(() => {});
-      $('#ovtxt').textContent = 'Đang chờ hình ảnh…';
+      showOverlay('Đang chờ hình ảnh…');
     };
     pc.onconnectionstatechange = () => {
-      const s = pc && pc.connectionState;
-      if (s === 'connected') $('#dot').classList.add('ok');
-      if (s === 'disconnected') { $('#dot').classList.remove('ok'); $('#ovtxt').textContent = 'Mạng chập chờn, đang thử lại…'; }
-      if (s === 'failed') endSession('Không truyền được hình ảnh qua mạng hiện tại (cần máy chủ trung chuyển TURN).');
+      if (pc !== me) return;
+      const s = pc.connectionState;
+      if (s === 'connected') { clearTimeout(discTimer); $('#dot').classList.add('ok'); if (video.videoWidth) $('#ov').classList.add('hidden'); }
+      if (s === 'disconnected') {
+        $('#dot').classList.remove('ok'); showOverlay('Mạng chập chờn, đang thử lại…', true);
+        clearTimeout(discTimer); discTimer = setTimeout(() => { if (pc === me && pc.connectionState !== 'connected') scheduleReconnect(); }, 6000);
+      }
+      if (s === 'failed') scheduleReconnect('Không truyền được hình ảnh, đang thử lại…');
     };
     statsTimer = setInterval(updateStats, 1000);
   }
-  video.addEventListener('loadeddata', () => $('#ov').classList.add('hidden'));
+  video.addEventListener('loadeddata', () => { $('#ov').classList.add('hidden'); layout(); });
+  video.addEventListener('resize', layout);
 
+  // ---------- quality ----------
+  function qualityKey() { return pref.get('quality', '') || (relay ? 'eco' : 'bal'); }
+  function sendQuality() {
+    const q = QUALITY[qualityKey()];
+    if (dc && dc.readyState === 'open') dc.send(JSON.stringify({ t: 'quality', fps: q.fps, long: q.long, br: q.br }));
+    syncMenu();
+  }
+
+  // ---------- stats & TURN quota ----------
   let last = { bytes: 0, t: 0 };
   async function updateStats() {
     if (!pc) return;
     const stats = await pc.getStats();
-    let rtt = null, fps = null, bytes = null, relay = false, pairId = null;
+    let rtt = null, fps = null, bytes = null, isRelay = null, pairId = null;
     stats.forEach((s) => {
       if (s.type === 'transport' && s.selectedCandidatePairId) pairId = s.selectedCandidatePairId;
       if (s.type === 'inbound-rtp' && s.kind === 'video') { fps = s.framesPerSecond; bytes = s.bytesReceived; }
@@ -382,82 +514,190 @@
     stats.forEach((s) => {
       if (s.type === 'candidate-pair' && (s.id === pairId || (!pairId && s.nominated && s.state === 'succeeded'))) {
         if (s.currentRoundTripTime != null) rtt = Math.round(s.currentRoundTripTime * 1000);
-        const lc = stats.get(s.localCandidateId);
-        relay = !!(lc && lc.candidateType === 'relay');
+        const lc = stats.get(s.localCandidateId), rc = stats.get(s.remoteCandidateId);
+        isRelay = !!((lc && lc.candidateType === 'relay') || (rc && rc.candidateType === 'relay'));
       }
     });
-    let kbps = null;
     const now = performance.now();
-    if (bytes != null && last.t) kbps = Math.round(((bytes - last.bytes) * 8) / (now - last.t));
+    if (bytes != null && last.t && bytes >= last.bytes) lastKbps = Math.round(((bytes - last.bytes) * 8) / (now - last.t));
     if (bytes != null) last = { bytes, t: now };
+    if (isRelay !== null && isRelay !== relay) {
+      relay = isRelay;
+      if (relay && !pref.get('quality', '')) toast('Hình đang đi qua máy trung chuyển (TURN): tự chuyển sang Tiết kiệm để đỡ tốn dung lượng');
+      sendQuality();
+      if (relay) refreshUsage();
+    }
     const parts = [];
     if (rtt != null) parts.push(rtt + ' ms');
     if (fps != null) parts.push(Math.round(fps) + ' fps');
-    if (kbps != null) parts.push(kbps >= 1000 ? (kbps / 1000).toFixed(1) + ' Mbps' : kbps + ' kbps');
-    if (rtt != null) parts.push(relay ? 'qua TURN' : 'P2P');
+    if (bytes != null) parts.push(lastKbps >= 1000 ? (lastKbps / 1000).toFixed(1) + ' Mbps' : lastKbps + ' kbps');
+    if (relay !== null) parts.push(relay ? 'qua TURN' : 'P2P');
     $('#stats').textContent = parts.join(' · ');
+    renderQuota();
+  }
+
+  async function refreshUsage() {
+    try { usage = await (await fetch('usage', { cache: 'no-store' })).json(); } catch { usage = null; }
+    renderQuota();
+  }
+  function renderQuota() {
+    const el = $('#quota');
+    el.classList.remove('warn', 'bad');
+    if (!relay) { el.textContent = relay === false ? 'Kết nối thẳng · không tốn dung lượng TURN' : ''; return; }
+    if (!usage || !usage.available) { el.textContent = ''; return; }
+    const left = Math.max(0, usage.quotaMB - usage.usedMB);
+    const pct = usage.quotaMB ? left / usage.quotaMB : 0;
+    const fmt = (mb) => (mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : Math.round(mb) + ' MB');
+    let txt = `TURN còn ${fmt(left)}/${fmt(usage.quotaMB)}`;
+    if (lastKbps > 30) {
+      const min = (left * 8 * 1024) / lastKbps / 60;
+      txt += ` · ≈ ${min >= 120 ? Math.round(min / 60) + ' giờ' : Math.max(0, Math.round(min)) + ' phút'}`;
+    }
+    el.textContent = txt;
+    if (pct < 0.03) el.classList.add('bad'); else if (pct < 0.1) el.classList.add('warn');
   }
 
   function endSession(msg) {
-    clearInterval(statsTimer);
-    try { dc && dc.close(); } catch {}
-    try { pc && pc.close(); } catch {}
+    inSession = false; reconnecting = false; reconnectSince = 0;
+    clearTimeout(retryTimer); clearInterval(usageTimer);
+    closePeer();
     try { ws && (ws.onclose = null, ws.close()); } catch {}
-    pc = dc = ws = null;
+    ws = null;
     video.srcObject = null;
-    $('#sheet').classList.remove('open');
+    $('#sheet').classList.remove('open'); $('#menu').classList.add('hidden');
     $('#session').classList.add('hidden');
     $('#home').classList.remove('hidden');
     busy(false);
     setErr(msg || '');
     renderRecent();
+    releaseAwake();
     try { if (document.fullscreenElement) document.exitFullscreen(); } catch {}
+  }
+
+  // ---------- keep the iPhone screen on ----------
+  async function keepAwake() {
+    try { if ('wakeLock' in navigator && !wakeLock && document.visibilityState === 'visible') { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } } catch {}
+  }
+  function releaseAwake() { try { wakeLock && wakeLock.release(); } catch {} wakeLock = null; }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && inSession) {
+      keepAwake();
+      if (pc && pc.connectionState !== 'connected') scheduleReconnect();
+    }
+  });
+
+  // ---------- layout: fit, rotate, zoom ----------
+  let rot = 0, zoom = 1, panX = 0, panY = 0, dispW = 0, dispH = 0;
+  function rotMode() { return pref.get('rotate', 'auto'); }
+  function layout() {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) return;
+    const B = vbox.getBoundingClientRect();
+    const m = rotMode();
+    if (m === 'auto') rot = ((B.height >= B.width) !== (vh >= vw)) ? 90 : 0;
+    else rot = Number(m) || 0;
+    const ew = rot ? vh : vw, eh = rot ? vw : vh;
+    const s = Math.min(B.width / ew, B.height / eh);
+    dispW = vw * s; dispH = vh * s;
+    clampPan();
+    video.style.width = dispW + 'px';
+    video.style.height = dispH + 'px';
+    video.style.left = (B.width - dispW) / 2 + 'px';
+    video.style.top = (B.height - dispH) / 2 + 'px';
+    video.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom}) rotate(${rot}deg)`;
+    const zc = $('#zoomchip');
+    zc.classList.toggle('hidden', zoom <= 1.01);
+    zc.textContent = zoom.toFixed(1) + '× · Đặt lại';
+  }
+  function clampPan() {
+    const B = vbox.getBoundingClientRect();
+    const ew = (rot ? dispH : dispW) * zoom, eh = (rot ? dispW : dispH) * zoom;
+    const mx = Math.max(0, (ew - B.width) / 2), my = Math.max(0, (eh - B.height) / 2);
+    panX = Math.min(mx, Math.max(-mx, panX));
+    panY = Math.min(my, Math.max(-my, panY));
+  }
+  function resetZoom() { zoom = 1; panX = panY = 0; layout(); }
+  window.addEventListener('resize', layout);
+  window.addEventListener('orientationchange', () => setTimeout(layout, 300));
+  $('#zoomchip').addEventListener('click', resetZoom);
+
+  // screen point -> 0..1 coordinates on the Android screen
+  function norm(ev) {
+    if (!dispW) return null;
+    const B = vbox.getBoundingClientRect();
+    let dx = (ev.clientX - (B.left + B.width / 2 + panX)) / zoom;
+    let dy = (ev.clientY - (B.top + B.height / 2 + panY)) / zoom;
+    if (rot === 90) { const t = dx; dx = dy; dy = -t; }
+    const x = dx / dispW + 0.5, y = dy / dispH + 0.5;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+    return { x, y };
   }
 
   // ---------- control ----------
   const sendCtl = (o) => { if (dc && dc.readyState === 'open') dc.send(JSON.stringify(o)); };
   function haptic() { try { navigator.vibrate && navigator.vibrate(8); } catch {} }
 
-  function norm(ev) {
-    const vw = video.videoWidth, vh = video.videoHeight;
-    if (!vw) return null;
-    const r = video.getBoundingClientRect();
-    const scale = Math.min(r.width / vw, r.height / vh);
-    const w = vw * scale, h = vh * scale;
-    const ox = r.left + (r.width - w) / 2, oy = r.top + (r.height - h) / 2;
-    const x = (ev.clientX - ox) / w, y = (ev.clientY - oy) / h;
-    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
-    return { x, y };
-  }
-
-  let down = null;
-  video.addEventListener('pointerdown', (e) => {
+  const pts = new Map();
+  let down = null, pinch = null, pinchUsed = false;
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  vbox.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    if (down) return; // ignore extra fingers
-    try { video.setPointerCapture(e.pointerId); } catch {}
-    const p = norm(e);
-    down = p ? { ...p, t: performance.now(), id: e.pointerId } : null;
-    if (e.pointerType === 'mouse') video.focus();
+    try { vbox.setPointerCapture(e.pointerId); } catch {}
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 1 && !pinchUsed) {
+      const p = norm(e);
+      down = p ? { ...p, t: performance.now(), id: e.pointerId } : null;
+      if (e.pointerType === 'mouse') video.focus();
+    } else if (pts.size === 2) {
+      down = null; pinchUsed = true;
+      const [a, b] = [...pts.values()];
+      const B = vbox.getBoundingClientRect();
+      pinch = { d0: dist(a, b) || 1, z0: zoom, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, px: panX, py: panY, cx: B.left + B.width / 2, cy: B.top + B.height / 2 };
+    }
   });
-  video.addEventListener('pointerup', (e) => {
-    if (!down || e.pointerId !== down.id) return;
-    const p = norm(e) || down;
-    const dt = Math.max(1, Math.round(performance.now() - down.t));
-    const dist = Math.hypot(p.x - down.x, p.y - down.y);
-    if (dist < 0.015) sendCtl({ t: 'tap', x: down.x, y: down.y, d: Math.min(dt, 1500) });
-    else sendCtl({ t: 'swipe', x1: down.x, y1: down.y, x2: p.x, y2: p.y, d: Math.min(Math.max(dt, 60), 1500) });
-    down = null;
+  vbox.addEventListener('pointermove', (e) => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pts.size >= 2) {
+      const [a, b] = [...pts.values()];
+      const z = Math.min(5, Math.max(1, pinch.z0 * dist(a, b) / pinch.d0));
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      // keep the point that was under the fingers under the fingers
+      const lx = (pinch.mx - pinch.cx - pinch.px) / pinch.z0, ly = (pinch.my - pinch.cy - pinch.py) / pinch.z0;
+      zoom = z; panX = mx - pinch.cx - z * lx; panY = my - pinch.cy - z * ly;
+      if (zoom <= 1.01) { zoom = 1; panX = panY = 0; }
+      layout();
+    }
   });
-  video.addEventListener('pointercancel', () => { down = null; });
-  video.addEventListener('contextmenu', (e) => e.preventDefault());
+  function pointerEnd(e) {
+    pts.delete(e.pointerId);
+    if (down && e.pointerId === down.id && e.type === 'pointerup') {
+      const p = norm(e) || down;
+      const dt = Math.max(1, Math.round(performance.now() - down.t));
+      const d = Math.hypot(p.x - down.x, p.y - down.y);
+      if (d < 0.015 / zoom) sendCtl({ t: 'tap', x: down.x, y: down.y, d: Math.min(dt, 1500) });
+      else sendCtl({ t: 'swipe', x1: down.x, y1: down.y, x2: p.x, y2: p.y, d: Math.min(Math.max(dt, 60), 1500) });
+    }
+    if (!down || e.pointerId === down.id) down = null;
+    if (pts.size < 2) pinch = null;
+    if (pts.size === 0) pinchUsed = false;
+  }
+  vbox.addEventListener('pointerup', pointerEnd);
+  vbox.addEventListener('pointercancel', pointerEnd);
+  vbox.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('gesturestart', (e) => e.preventDefault());
   document.addEventListener('touchmove', (e) => {
-    if (!$('#session').classList.contains('hidden') && !e.target.closest('.sheet')) e.preventDefault();
+    if (inSession && !e.target.closest('.sheet, .menu')) e.preventDefault();
   }, { passive: false });
 
   let wheelAt = 0;
-  video.addEventListener('wheel', (e) => {
+  vbox.addEventListener('wheel', (e) => {
     e.preventDefault();
+    if (e.ctrlKey) { // trackpad pinch / ctrl+wheel = zoom
+      zoom = Math.min(5, Math.max(1, zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
+      if (zoom <= 1.01) { zoom = 1; panX = panY = 0; }
+      return layout();
+    }
     const now = performance.now();
     if (now - wheelAt < 250) return;
     wheelAt = now;
@@ -478,21 +718,47 @@
   });
 
   document.querySelectorAll('[data-key]').forEach((b) => b.addEventListener('click', () => { haptic(); sendCtl({ t: 'key', k: b.dataset.key }); }));
-  $('#notif').addEventListener('click', () => { haptic(); sendCtl({ t: 'key', k: 'notifications' }); });
 
   const sendText = () => { const v = $('#textin').value; if (v) { sendCtl({ t: 'text', s: v }); $('#textin').value = ''; toast('Đã gửi'); } };
   $('#sendtext').addEventListener('click', sendText);
   $('#textin').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendText(); } });
-  $('#kb').addEventListener('click', () => { const s = $('#sheet'); s.classList.toggle('open'); if (s.classList.contains('open')) $('#textin').focus(); });
+  $('#kb').addEventListener('click', () => { $('#menu').classList.add('hidden'); const s = $('#sheet'); s.classList.toggle('open'); if (s.classList.contains('open')) $('#textin').focus(); });
   $('#sheetClose').addEventListener('click', () => { $('#sheet').classList.remove('open'); $('#textin').blur(); });
 
+  // ---------- options menu ----------
+  function syncMenu() {
+    const k = qualityKey();
+    document.querySelectorAll('#qseg button').forEach((b) => b.classList.toggle('on', b.dataset.q === k));
+    document.querySelectorAll('#rseg button').forEach((b) => b.classList.toggle('on', b.dataset.r === rotMode()));
+    $('#qnote').textContent = pref.get('quality', '')
+      ? (relay && k === 'hi' ? 'Đang đi qua TURN: mức Mượt tốn dung lượng nhanh.' : '')
+      : 'Tự động: Cân bằng khi kết nối thẳng, Tiết kiệm khi đi qua TURN.';
+  }
+  $('#more').addEventListener('click', (e) => { e.stopPropagation(); $('#sheet').classList.remove('open'); syncMenu(); $('#menu').classList.toggle('hidden'); });
+  document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#menu, #more')) $('#menu').classList.add('hidden'); });
+  $('#qseg').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-q]'); if (!b) return;
+    pref.set('quality', b.dataset.q); sendQuality(); toast('Chất lượng: ' + QUALITY[b.dataset.q].label);
+  });
+  $('#rseg').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-r]'); if (!b) return;
+    pref.set('rotate', b.dataset.r); resetZoom(); syncMenu();
+  });
+  $('#notif').addEventListener('click', () => { haptic(); sendCtl({ t: 'key', k: 'notifications' }); $('#menu').classList.add('hidden'); });
   if (!document.documentElement.requestFullscreen) $('#fs').classList.add('hidden');
-  $('#fs').addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else $('#session').requestFullscreen().catch(() => {}); });
+  $('#fs').addEventListener('click', () => {
+    $('#menu').classList.add('hidden');
+    if (document.fullscreenElement) document.exitFullscreen(); else $('#session').requestFullscreen().catch(() => {});
+  });
+
   $('#bye').addEventListener('click', () => endSession(''));
   $('#copySid').addEventListener('click', () => current && copy(current.id));
   $('#go').addEventListener('click', start);
   $('#pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') start(); });
   $('#id').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#pw').focus(); });
+
+  usageTimer = null;
+  setInterval(() => { if (inSession && relay) refreshUsage(); }, 60000);
 
   const qid = new URLSearchParams(location.search).get('id');
   if (qid) $('#id').value = fmtId(qid);
