@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Remote Screen</string>
+    <string name="a11y_label">Remote Screen Input</string>
+    <string name="a11y_desc">Cho phép người đã xác thực bằng ID và mật khẩu chạm, vuốt và nhập chữ trên máy này từ xa.</string>
+</resources>
