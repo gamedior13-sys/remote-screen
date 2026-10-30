@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: build-apk
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,6 +27,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+
+      # One fixed signing key, kept in the repo, so new APKs install over old ones.
+      - name: Stable signing key
+        run: |
+          if [ ! -f android/app/debug.keystore ]; then
+            keytool -genkeypair -keystore android/app/debug.keystore -storepass android \
+              -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
       - name: Build debug APK
         working-directory: android
@@ -40,6 +53,7 @@ jobs:
           cp android/app/build/outputs/apk/debug/app-debug.apk server/public/remote-screen.apk
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
-          git add server/public/remote-screen.apk
+          git add server/public/remote-screen.apk android/app/debug.keystore
           git commit -m "Publish APK" || exit 0
+          git pull --rebase
           git push
