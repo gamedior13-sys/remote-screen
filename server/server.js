@@ -104,6 +104,29 @@ app.disable('x-powered-by');
 app.set('trust proxy', true);
 app.get('/config', async (req, res) => res.json({ iceServers: await iceServersFor(req) }));
 app.get('/healthz', (_req, res) => res.send('ok'));
+
+// TURN quota for the web UI (needs METERED_SECRET_KEY from the Metered dashboard).
+const METERED_SECRET_KEY = process.env.METERED_SECRET_KEY || '';
+let usageCache = { data: null, until: 0 };
+app.get('/usage', async (_req, res) => {
+  if (!METERED_APP || !METERED_SECRET_KEY) return res.json({ available: false });
+  if (usageCache.data && Date.now() < usageCache.until) return res.json(usageCache.data);
+  try {
+    const app_ = METERED_APP.replace(/\.metered\.live.*$/, '');
+    const r = await fetch(`https://${app_}.metered.live/api/v1/turn/current_usage?secretKey=${encodeURIComponent(METERED_SECRET_KEY.trim())}`);
+    const j = await r.json();
+    if (typeof j.quotaInGB !== 'number') {
+      console.warn(`usage: Metered answered HTTP ${r.status}: ${JSON.stringify(j).slice(0, 200)}`);
+      return res.json({ available: false });
+    }
+    const data = { available: true, quotaMB: j.quotaInGB * 1024, usedMB: (j.usageInGB || 0) * 1024 };
+    usageCache = { data, until: Date.now() + 60e3 };
+    res.json(data);
+  } catch (e) {
+    console.warn('usage fetch failed:', e.message);
+    res.json({ available: false });
+  }
+});
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0 }));
 
 const server = http.createServer(app);
@@ -184,7 +207,15 @@ wss.on('connection', (ws, req) => {
         // same message for unknown id and wrong password: do not leak which IDs exist
         return send(ws, { type: 'error', code: 'denied', message: 'Wrong ID or password' });
       }
-      if (dev.controller) return send(ws, { type: 'error', code: 'busy', message: 'Device is already being controlled' });
+      if (dev.controller && dev.controller !== ws) {
+        // A newer session with the right password takes over (e.g. the same phone reconnecting
+        // after a network change while its old socket is not yet detected as dead).
+        const old = dev.controller;
+        old.role = null;
+        send(old, { type: 'error', code: 'taken_over', message: 'Another session took over this device' });
+        try { old.terminate(); } catch {}
+        dev.controller = null;
+      }
       ws.role = 'controller';
       ws.deviceId = String(m.id).replace(/\s+/g, '');
       dev.controller = ws;
