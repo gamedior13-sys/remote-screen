@@ -7,9 +7,15 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
+import android.hardware.display.DisplayManager
 import android.media.projection.MediaProjection
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.util.DisplayMetrics
+import android.view.Display
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import okhttp3.OkHttpClient
@@ -30,6 +36,7 @@ import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
 import org.webrtc.RtpParameters
 import org.webrtc.RtpReceiver
+import org.webrtc.RtpSender
 import org.webrtc.ScreenCapturerAndroid
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
@@ -91,6 +98,15 @@ class ShareService : Service() {
     private var deviceId = ""
     private var password = ""
     private var stopping = false
+
+    // Current capture / encoding settings (changed by the controller's quality menu).
+    private var sender: RtpSender? = null
+    private var fps = FPS
+    private var longSideLimit = MAX_LONG_SIDE
+    private var maxBitrate = MAX_BITRATE_BPS
+    private var capW = 0
+    private var capH = 0
+    private var displayListener: DisplayManager.DisplayListener? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -198,13 +214,40 @@ class ShareService : Service() {
      * The capture runs for the whole service lifetime (not per controller) because on Android 14+
      * the permission result can create only ONE MediaProjection.
      */
+    /** Real size of the screen in its CURRENT rotation. */
+    private fun realScreen(): Pair<Int, Int> {
+        val d = (getSystemService(DISPLAY_SERVICE) as DisplayManager).getDisplay(Display.DEFAULT_DISPLAY)
+        val m = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        d.getRealMetrics(m)
+        return m.widthPixels to m.heightPixels
+    }
+
+    private fun captureSize(): Pair<Int, Int> {
+        val (sw, sh) = realScreen()
+        val scale = minOf(1f, longSideLimit / maxOf(sw, sh).toFloat())
+        return ((sw * scale).toInt() and 1.inv()) to ((sh * scale).toInt() and 1.inv())
+    }
+
+    /** Follow screen rotation / quality changes so the video always matches the real screen. */
+    @Synchronized
+    private fun updateCapture() {
+        val c = capturer ?: return
+        val (w, h) = captureSize()
+        if (w == capW && h == capH) return
+        capW = w; capH = h
+        try { c.changeCaptureFormat(w, h, fps) } catch (t: Throwable) { Log.w(TAG, "resize failed", t) }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        updateCapture()
+    }
+
     private fun startCapture(permissionData: Intent) {
         val f = factory!!
-        val metrics = resources.displayMetrics
-        val longSide = maxOf(metrics.widthPixels, metrics.heightPixels).toFloat()
-        val scale = minOf(1f, MAX_LONG_SIDE / longSide)
-        val w = (metrics.widthPixels * scale).toInt() and 1.inv()
-        val h = (metrics.heightPixels * scale).toInt() and 1.inv()
+        val (w, h) = captureSize()
+        capW = w; capH = h
 
         helper = SurfaceTextureHelper.create("capture", eglBase!!.eglBaseContext)
         videoSource = f.createVideoSource(true /* isScreencast */)
@@ -214,6 +257,32 @@ class ShareService : Service() {
         capturer!!.initialize(helper, applicationContext, videoSource!!.capturerObserver)
         capturer!!.startCapture(w, h, FPS)
         videoTrack = f.createVideoTrack("screen0", videoSource)
+
+        val dm = getSystemService(DISPLAY_SERVICE) as DisplayManager
+        displayListener = object : DisplayManager.DisplayListener {
+            override fun onDisplayAdded(displayId: Int) {}
+            override fun onDisplayRemoved(displayId: Int) {}
+            override fun onDisplayChanged(displayId: Int) { if (displayId == Display.DEFAULT_DISPLAY) updateCapture() }
+        }.also { dm.registerDisplayListener(it, Handler(Looper.getMainLooper())) }
+    }
+
+    private fun applySenderParams() {
+        val s = sender ?: return
+        try {
+            val p = s.parameters
+            // Favour smooth, low-latency frames over sharpness when the link is congested.
+            p.degradationPreference = RtpParameters.DegradationPreference.MAINTAIN_FRAMERATE
+            p.encodings.forEach { e -> e.maxBitrateBps = maxBitrate; e.maxFramerate = fps }
+            s.setParameters(p)
+        } catch (t: Throwable) { Log.w(TAG, "sender params", t) }
+    }
+
+    private fun applyQuality(newFps: Int, longSide: Int, bitrate: Int) {
+        fps = newFps.coerceIn(5, 60)
+        longSideLimit = longSide.coerceIn(480, 1920)
+        maxBitrate = bitrate.coerceIn(200_000, 10_000_000)
+        updateCapture()
+        applySenderParams()
     }
 
     // ---------------------------------------------------------------- signaling
@@ -330,13 +399,8 @@ class ShareService : Service() {
             })
         }
 
-        val sender = peer.addTrack(videoTrack, listOf("screen"))
-        // Favour smooth, low-latency frames over sharpness when the link is congested.
-        sender.parameters.let { p ->
-            p.degradationPreference = RtpParameters.DegradationPreference.MAINTAIN_FRAMERATE
-            p.encodings.forEach { e -> e.maxBitrateBps = MAX_BITRATE_BPS; e.maxFramerate = FPS }
-            sender.setParameters(p)
-        }
+        sender = peer.addTrack(videoTrack, listOf("screen"))
+        applySenderParams()
 
         peer.createOffer(object : SimpleSdp() {
             override fun onCreateSuccess(sdp: SessionDescription) {
@@ -351,9 +415,14 @@ class ShareService : Service() {
         try { pc?.close(); pc?.dispose() } catch (_: Throwable) {}
         dc = null
         pc = null
+        sender = null
     }
 
     private fun handleControl(o: JSONObject) {
+        if (o.optString("t") == "quality") {
+            applyQuality(o.optInt("fps", fps), o.optInt("long", longSideLimit), o.optInt("br", maxBitrate))
+            return
+        }
         val svc = ControlAccessibilityService.instance ?: return
         when (o.getString("t")) {
             "tap" -> svc.tap(o.getDouble("x").toFloat(), o.getDouble("y").toFloat(), o.optLong("d", 50))
@@ -374,6 +443,10 @@ class ShareService : Service() {
         running = false
         state = STATE_CONNECTING
         try { ws?.close(1000, "bye") } catch (_: Throwable) {}
+        try {
+            displayListener?.let { (getSystemService(DISPLAY_SERVICE) as DisplayManager).unregisterDisplayListener(it) }
+        } catch (_: Throwable) {}
+        displayListener = null
         closePeer()
         try { capturer?.stopCapture() } catch (_: Throwable) {}
         try { capturer?.dispose() } catch (_: Throwable) {}
