@@ -225,7 +225,7 @@ class ShareService : Service() {
 
     private fun captureSize(): Pair<Int, Int> {
         val (sw, sh) = realScreen()
-        val scale = minOf(1f, longSideLimit / maxOf(sw, sh).toFloat())
+        val scale = minOf(1f, MAX_LONG_SIDE / maxOf(sw, sh).toFloat())
         return ((sw * scale).toInt() and 1.inv()) to ((sh * scale).toInt() and 1.inv())
     }
 
@@ -235,8 +235,42 @@ class ShareService : Service() {
         val c = capturer ?: return
         val (w, h) = captureSize()
         if (w == capW && h == capH) return
-        capW = w; capH = h
-        try { c.changeCaptureFormat(w, h, fps) } catch (t: Throwable) { Log.w(TAG, "resize failed", t) }
+        if (resizeCapture(c, w, h)) { capW = w; capH = h; applyOutputFormat() }
+    }
+
+    /**
+     * Resize the running screen capture in place (VirtualDisplay.resize).
+     * ScreenCapturerAndroid.changeCaptureFormat() would re-create the virtual display, which
+     * Android 14+ forbids for one MediaProjection and leaves the stream black.
+     */
+    private fun resizeCapture(c: ScreenCapturerAndroid, w: Int, h: Int): Boolean = try {
+        val cls = ScreenCapturerAndroid::class.java
+        fun field(n: String) = cls.getDeclaredField(n).apply { isAccessible = true }
+        val vd = field("virtualDisplay").get(c) as android.hardware.display.VirtualDisplay
+        val st = field("surfaceTextureHelper").get(c) as SurfaceTextureHelper
+        field("width").setInt(c, w)
+        field("height").setInt(c, h)
+        val dpi = resources.displayMetrics.densityDpi
+        st.handler.post {
+            try {
+                st.setTextureSize(w, h)
+                vd.resize(w, h, dpi)
+            } catch (t: Throwable) { Log.w(TAG, "resize failed", t) }
+        }
+        true
+    } catch (t: Throwable) {
+        Log.w(TAG, "resize not supported", t)
+        false
+    }
+
+    /** Scale / frame-rate cap applied to the outgoing video (does not touch the capture itself). */
+    private fun applyOutputFormat() {
+        val src = videoSource ?: return
+        if (capW <= 0 || capH <= 0) return
+        val scale = minOf(1f, longSideLimit / maxOf(capW, capH).toFloat())
+        val w = (capW * scale).toInt() and 1.inv()
+        val h = (capH * scale).toInt() and 1.inv()
+        try { src.adaptOutputFormat(maxOf(w, h), minOf(w, h), fps) } catch (t: Throwable) { Log.w(TAG, "adapt", t) }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -281,7 +315,7 @@ class ShareService : Service() {
         fps = newFps.coerceIn(5, 60)
         longSideLimit = longSide.coerceIn(480, 1920)
         maxBitrate = bitrate.coerceIn(200_000, 10_000_000)
-        updateCapture()
+        applyOutputFormat()
         applySenderParams()
     }
 
