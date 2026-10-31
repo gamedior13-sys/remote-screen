@@ -11,6 +11,7 @@
  */
 const http = require('http');
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
 const express = require('express');
 const { WebSocketServer } = require('ws');
@@ -185,6 +186,18 @@ async function pickedIce(pick) {
   return r ? [{ urls: 'stun:stun.l.google.com:19302' }, r.ice] : null;
 }
 app.get('/healthz', (_req, res) => res.send('ok'));
+
+// Versions for the "sync" buttons: the web page (hash of index.html) and the newest Android build
+// (version.json is written by the CI next to remote-screen.apk).
+const WEB_VERSION = (() => {
+  try { return crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname, 'public', 'index.html'))).digest('hex').slice(0, 8); }
+  catch { return String(Date.now()); }
+})();
+app.get('/version', (_req, res) => {
+  let apk = null;
+  try { apk = JSON.parse(fs.readFileSync(path.join(__dirname, 'public', 'version.json'), 'utf8')); } catch {}
+  res.set('Cache-Control', 'no-store').json({ web: WEB_VERSION, apk });
+});
 
 // TURN quota for the web UI (needs METERED_SECRET_KEY from the Metered dashboard).
 const METERED_SECRET_KEY = process.env.METERED_SECRET_KEY || '';
