@@ -4,6 +4,7 @@ on:
   push:
     paths-ignore:
       - "server/public/remote-screen.apk"
+      - "server/public/version.json"
   workflow_dispatch:
 
 permissions:
@@ -59,8 +60,9 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             cp /tmp/app.apk server/public/remote-screen.apk
+            printf '{"versionCode":%d,"versionName":"1.%s","apk":"remote-screen.apk","builtAt":"%s"}\n' $((100 + GITHUB_RUN_NUMBER)) "$GITHUB_RUN_NUMBER" "$(date -u +%FT%TZ)" > server/public/version.json
             [ -f android/app/debug.keystore ] || cp /tmp/debug.keystore android/app/debug.keystore
-            git add server/public/remote-screen.apk android/app/debug.keystore
+            git add server/public/remote-screen.apk server/public/version.json android/app/debug.keystore
             git commit -m "Publish APK" || exit 0
             git push && exit 0
             sleep 5
