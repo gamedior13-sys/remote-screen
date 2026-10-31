@@ -510,7 +510,9 @@
     const urls = probeCfg.map((r) => r.url);
     const r = await Promise.all(urls.map((u) => probeOne(u, ms)));
     const out = urls.map((u, i) => ({ url: u, ms: r[i] }));
-    return out.sort((a, b) => (a.ms == null) - (b.ms == null) || a.ms - b.ms);
+    // Metered only has a small free quota: prefer the others unless Metered is clearly faster.
+    const cost = (x) => x.ms + ((relayOf(x.url) || {}).name === 'Metered' ? 25 : 0);
+    return out.sort((a, b) => (a.ms == null) - (b.ms == null) || cost(a) - cost(b));
   }
   async function pickTurn(force) {
     if (!probeCfg) return null;
@@ -565,7 +567,7 @@
     if (m.type === 'error') {
       if (m.code === 'taken_over') return endSession('Máy này vừa được điều khiển từ một thiết bị/tab khác.');
       if (inSession) return scheduleReconnect(m.code === 'denied' ? 'Đang chờ máy Android kết nối lại…' : 'Đang kết nối lại…');
-      const map = { denied: 'Sai ID hoặc mật khẩu, hoặc máy Android chưa bật chia sẻ', busy: 'Máy này đang được người khác điều khiển', rate_limited: 'Sai quá nhiều lần, thử lại sau ít phút' };
+      const map = { denied: 'Sai ID hoặc mật khẩu, hoặc máy Android chưa bật chia sẻ', busy: 'Máy này đang được người khác điều khiển', rate_limited: 'Máy chủ đang bận, thử lại' };
       setErr(map[m.code] || m.message); busy(false); return;
     }
     if (m.type === 'connected') {
