@@ -67,46 +67,64 @@ function localIPv4s() {
   return out;
 }
 
-let hostedCache = { list: null, until: 0 };
-async function hostedTurn() {
-  if (hostedCache.list && Date.now() < hostedCache.until) return hostedCache.list;
-  let list = null;
+// Each hosted provider has its own short-lived credentials, cached separately.
+const turnCache = { cf: { list: null, until: 0 }, metered: { list: null, until: 0 } };
+
+async function cloudflareTurn() {
+  if (!(CF_TURN_KEY_ID && CF_TURN_TOKEN)) return [];
+  const c = turnCache.cf;
+  if (c.list && Date.now() < c.until) return c.list;
   try {
-    if (CF_TURN_KEY_ID && CF_TURN_TOKEN) {
-      const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${CF_TURN_KEY_ID}/credentials/generate-ice-servers`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${CF_TURN_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ttl: 86400 }),
-      });
-      const j = await r.json();
-      list = Array.isArray(j.iceServers) ? j.iceServers : j.iceServers ? [j.iceServers] : null;
-    } else if (METERED_APP && METERED_API_KEY) {
-      // Accept either the bare key or the whole URL copied from the Metered dashboard.
-      const raw = METERED_API_KEY.trim();
-      const m = raw.match(/apiKey=([^&\s"']+)/);
-      const key = m ? m[1] : raw;
-      const host = raw.match(/https:\/\/([a-z0-9-]+)\.metered\.live/i);
-      const app = host ? host[1] : METERED_APP.replace(/\.metered\.live.*$/, '');
-      const r = await fetch(`https://${app}.metered.live/api/v1/turn/credentials?apiKey=${encodeURIComponent(key)}`);
-      const text = await r.text();
-      let j = null;
-      try { j = JSON.parse(text); } catch {}
-      list = Array.isArray(j) ? j : Array.isArray(j && j.iceServers) ? j.iceServers : null;
-      if (!list) console.warn(`hosted TURN: Metered answered HTTP ${r.status}: ${text.slice(0, 200)}`);
-    }
-  } catch (e) {
-    console.warn('hosted TURN fetch failed:', e.message);
-  }
-  if (list && list.length) hostedCache = { list, until: Date.now() + 6 * 3600e3 };
-  return list || [];
+    const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${CF_TURN_KEY_ID.trim()}/credentials/generate-ice-servers`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${CF_TURN_TOKEN.trim()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ttl: 86400 }),
+    });
+    const text = await r.text();
+    let j = null; try { j = JSON.parse(text); } catch {}
+    let list = j && (Array.isArray(j.iceServers) ? j.iceServers : j.iceServers ? [j.iceServers] : null);
+    if (!list) { console.warn(`Cloudflare TURN answered HTTP ${r.status}: ${text.slice(0, 200)}`); return []; }
+    // Port 53 is blocked by browsers and only slows down gathering.
+    list = list.map((e) => ({ ...e, urls: [].concat(e.urls || []).filter((u) => !/:53(\?|$)/.test(u)) })).filter((e) => e.urls.length);
+    turnCache.cf = { list, until: Date.now() + 6 * 3600e3 };
+    return list;
+  } catch (e) { console.warn('Cloudflare TURN fetch failed:', e.message); return []; }
+}
+
+async function meteredTurn() {
+  if (!(METERED_APP && METERED_API_KEY)) return [];
+  const c = turnCache.metered;
+  if (c.list && Date.now() < c.until) return c.list;
+  try {
+    // Accept either the bare key or the whole URL copied from the Metered dashboard.
+    const raw = METERED_API_KEY.trim();
+    const m = raw.match(/apiKey=([^&\s"']+)/);
+    const key = m ? m[1] : raw;
+    const host = raw.match(/https:\/\/([a-z0-9-]+)\.metered\.live/i);
+    const app = host ? host[1] : METERED_APP.replace(/\.metered\.live.*$/, '');
+    const r = await fetch(`https://${app}.metered.live/api/v1/turn/credentials?apiKey=${encodeURIComponent(key)}`);
+    const text = await r.text();
+    let j = null; try { j = JSON.parse(text); } catch {}
+    const list = Array.isArray(j) ? j : Array.isArray(j && j.iceServers) ? j.iceServers : null;
+    if (!list) { console.warn(`Metered answered HTTP ${r.status}: ${text.slice(0, 200)}`); return []; }
+    turnCache.metered = { list, until: Date.now() + 6 * 3600e3 };
+    return list;
+  } catch (e) { console.warn('Metered fetch failed:', e.message); return []; }
+}
+
+async function hostedTurn() {
+  const cf = await cloudflareTurn();
+  return cf.length ? cf : meteredTurn();
 }
 
 async function iceServersFor(req) {
   if (CUSTOM_ICE) return CUSTOM_ICE;
   const list = [{ urls: 'stun:stun.l.google.com:19302' }];
   // A fixed-credential TURN (bigger free quota) replaces the metered one when configured.
+  const cf = await cloudflareTurn();
+  if (cf.length) list.push(...cf.filter((e) => e.username));
   if (EXTRA_TURN) list.push({ urls: EXTRA_TURN_URLS, username: EXTRA_TURN_USER, credential: EXTRA_TURN_PASS });
-  else if (HOSTED_TURN) list.push(...(await hostedTurn()));
+  else if (!cf.length && HOSTED_TURN) list.push(...(await hostedTurn()));
   if (LOCAL_TURN) {
     const host = String(req.headers.host || '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
     const hosts = [...new Set([host, ...localIPv4s()].filter(Boolean))];
@@ -132,10 +150,11 @@ async function relayCandidates() {
         ice: { urls: [`turn:${h}:3478?transport=udp`, `turn:${h}:3478?transport=tcp`], username: EXTRA_TURN_USER, credential: EXTRA_TURN_PASS } });
     }
   }
-  // Metered relays are geo-routed (Singapore for Vietnam): much lower ping, but a small free quota.
-  if (METERED_APP && METERED_API_KEY) {
+  // Cloudflare (anycast, 1000 GB free) and Metered (geo-routed, small free quota) relays.
+  const providers = [['Cloudflare', await cloudflareTurn()], ['Metered', await meteredTurn()]];
+  for (const [name, entries] of providers) {
     const byHost = new Map();
-    for (const e of await hostedTurn()) {
+    for (const e of entries) {
       if (!e || !e.username) continue;
       for (const u of [].concat(e.urls || [])) {
         const h = turnHost(u); if (!h) continue;
@@ -146,7 +165,7 @@ async function relayCandidates() {
     for (const [h, g] of byHost) {
       g.urls.sort((a, b) => Number(isUdpUrl(b)) - Number(isUdpUrl(a)));
       const udp = g.urls.find(isUdpUrl);
-      if (udp) out.push({ name: 'Metered', url: udp, ice: g });
+      if (udp) out.push({ name, url: udp, ice: g });
     }
   }
   return out;
@@ -262,13 +281,12 @@ wss.on('connection', (ws, req) => {
 
     // ---- controller connects ----
     if (m.type === 'connect' && !ws.role) {
-      if (isBlocked(ip)) return send(ws, { type: 'error', code: 'rate_limited', message: 'Too many failed attempts. Try again later.' });
       const dev = devices.get(String(m.id || '').replace(/\s+/g, ''));
       const ok = dev && safeEqual(dev.pwHash, sha(m.password || ''));
       if (!ok) {
-        noteFail(ip);
-        // same message for unknown id and wrong password: do not leak which IDs exist
-        return send(ws, { type: 'error', code: 'denied', message: 'Wrong ID or password' });
+        // No lock-out any more; a short pause per wrong attempt still makes guessing impractical.
+        // Same message for unknown id and wrong password: do not leak which IDs exist.
+        return setTimeout(() => send(ws, { type: 'error', code: 'denied', message: 'Wrong ID or password' }), 1000);
       }
       if (dev.controller && dev.controller !== ws) {
         // A newer session with the right password takes over (e.g. the same phone reconnecting
