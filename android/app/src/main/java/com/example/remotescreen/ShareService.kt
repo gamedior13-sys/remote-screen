@@ -519,8 +519,10 @@ class ShareService : Service() {
                             sendToController(JSONObject().put("t", "ime").put("on", on).put("text", text).put("pw", pw))
                         }
                         ControlAccessibilityService.eventListener = { o -> sendToController(o) }
-                        sendToController(JSONObject().put("t", "hello").put("caps", JSONArray().put("mt").put("macro").put("stat").put("watch"))
-                            .put("a11y", ControlAccessibilityService.instance != null))
+                        sendToController(JSONObject().put("t", "hello").put("caps", JSONArray().put("mt").put("macro").put("stat").put("watch").put("update"))
+                            .put("a11y", ControlAccessibilityService.instance != null)
+                            .put("ver", Updater.currentCode(this@ShareService)).put("vname", Updater.currentName(this@ShareService))
+                            .put("sdk", Build.VERSION.SDK_INT))
                         mainH.post {
                             ControlAccessibilityService.instance?.let { it.reportFocus(true); it.emitState() }
                             mainH.removeCallbacks(statTick); statTick.run()
@@ -585,6 +587,16 @@ class ShareService : Service() {
             "watch" -> mainH.post { svc.setWatch(o.optBoolean("on"), o.optBoolean("relaunch")) }
             "open_game" -> mainH.post { svc.openWatched() }
             "game_state" -> mainH.post { svc.emitState() }
+            "update_app" -> Updater.update(this, httpBase(), o.optBoolean("force")) { st ->
+                sendToController(JSONObject().put("t", "update").put("st", st))
+                if (st == "need_permission") mainH.post {
+                    // Show the "allow installing apps" switch; the controller can tap it remotely.
+                    try {
+                        startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:$packageName"))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (_: Throwable) {}
+                }
+            }
             "keep_screen" -> { getSharedPreferences("game", MODE_PRIVATE).edit().putBoolean("keepScreen", o.optBoolean("on", true)).apply() }
             "tap" -> svc.tap(o.getDouble("x").toFloat(), o.getDouble("y").toFloat(), o.optLong("d", 50))
             "swipe" -> svc.swipe(

