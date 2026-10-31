@@ -21,6 +21,9 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
+import android.os.PowerManager
+import android.net.Uri
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -57,6 +60,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var statusDot: View
     private lateinit var statusText: TextView
     private lateinit var a11yRow: LinearLayout
+    private lateinit var battRow: LinearLayout
+    private lateinit var macroBox: LinearLayout
+    private var macroSig = ""
     private lateinit var startBtn: Button
     private lateinit var advanced: LinearLayout
     private val prefs by lazy { getSharedPreferences("cfg", Context.MODE_PRIVATE) }
@@ -138,11 +144,7 @@ class MainActivity : ComponentActivity() {
 
         // ---- header
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        header.addView(TextView(this).apply {
-            text = "▯"; textSize = 22f; setTextColor(Color.WHITE); gravity = Gravity.CENTER
-            setTypeface(typeface, Typeface.BOLD)
-            background = gradient(13)
-        }, LinearLayout.LayoutParams(dp(44), dp(44)))
+        header.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher) }, LinearLayout.LayoutParams(dp(48), dp(48)))
         header.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, 0, 0)
             addView(label("Remote Screen", 20f, TEXT, true))
@@ -218,6 +220,22 @@ class MainActivity : ComponentActivity() {
             setOnClickListener { openA11y() }
         }, LinearLayout.LayoutParams(dp(64), dp(38)))
         stCard.addView(a11yRow, lp(12))
+
+        // Long idle-game sessions: let the app run without battery restrictions.
+        battRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            background = rounded(0x22FFB547, 12); setPadding(dp(12), dp(10), dp(8), dp(10))
+        }
+        battRow.addView(
+            label("Nên tắt tối ưu pin để treo game lâu không bị Android tắt app", 12.5f, WARN),
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        battRow.addView(Button(this).apply {
+            text = "Cho phép"; isAllCaps = false; setTextColor(Color.BLACK); textSize = 13f
+            background = rounded(WARN, 10); stateListAnimator = null
+            setOnClickListener { askBattery() }
+        }, LinearLayout.LayoutParams(dp(88), dp(38)))
+        stCard.addView(battRow, lp(10))
         root.addView(stCard, lp(12))
 
         // ---- main button
@@ -231,6 +249,22 @@ class MainActivity : ComponentActivity() {
         root.addView(label("Khi đang chia sẻ, thanh thông báo luôn hiện \"Đang chia sẻ màn hình\" kèm nút Dừng.", 12f).apply {
             gravity = Gravity.CENTER; setPadding(dp(8), dp(14), dp(8), 0)
         })
+
+        // ---- this phone can also control other devices (Android / PC)
+        root.addView(label("ĐIỀU KHIỂN MÁY KHÁC", 12f, MUTED, true).apply { letterSpacing = 0.08f; setPadding(dp(4), dp(26), 0, dp(8)) })
+        root.addView(Button(this).apply {
+            text = "Điều khiển máy khác bằng ID"; isAllCaps = false; textSize = 16f; setTextColor(TEXT)
+            setTypeface(typeface, Typeface.BOLD)
+            background = rounded(CARD2, 16, LINE); stateListAnimator = null
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, ControllerActivity::class.java).putExtra("server", server()))
+            }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)))
+
+        // ---- macros (auto click) saved from the controller; they run on this phone even when nobody is connected
+        root.addView(label("AUTO CLICK / MACRO", 12f, MUTED, true).apply { letterSpacing = 0.08f; setPadding(dp(4), dp(26), 0, dp(8)) })
+        macroBox = card()
+        root.addView(macroBox, lp(0))
 
         val scroll = ScrollView(this).apply { setBackgroundColor(BG); isFillViewport = true; addView(root) }
         setContentView(FrameLayout(this).apply { setBackgroundColor(BG); addView(scroll) })
@@ -263,6 +297,56 @@ class MainActivity : ComponentActivity() {
     private fun openA11y() {
         toast("Chọn \"Remote Screen Input\" rồi bật")
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    }
+
+    private fun batteryOk(): Boolean =
+        (getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
+
+    @android.annotation.SuppressLint("BatteryLife")
+    private fun askBattery() {
+        try {
+            startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+        } catch (_: Throwable) {
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
+    }
+
+    private fun renderMacros() {
+        val svc = ControlAccessibilityService.instance
+        val list = ControlAccessibilityService.loadMacros(this)
+        val running = svc?.macroRunning()
+        val sig = "$list|$running|${svc != null}"
+        if (sig == macroSig) return
+        macroSig = sig
+        macroBox.removeAllViews()
+        if (list.length() == 0) {
+            macroBox.addView(label("Chưa có macro. Trên iPhone mở bảng điều khiển → Auto click để ghi thao tác, macro sẽ lưu vào máy này.", 12.5f))
+            return
+        }
+        for (k in 0 until list.length()) {
+            val m = list.getJSONObject(k)
+            val name = m.optString("name")
+            val on = name == running
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            val loops = m.optInt("loops")
+            row.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(label(name, 15f, TEXT, true))
+                addView(label("${m.optJSONArray("steps")?.length() ?: 0} thao tác · " + if (loops == 0) "lặp mãi" else "lặp $loops lần", 12f))
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            row.addView(Button(this).apply {
+                text = if (on) "Dừng" else "Chạy"; isAllCaps = false; textSize = 14f
+                setTextColor(if (on) BAD else Color.WHITE)
+                background = if (on) rounded(0x33FF5D6C, 12, BAD) else gradient(12); stateListAnimator = null
+                setOnClickListener {
+                    val s = ControlAccessibilityService.instance
+                    if (s == null) { openA11y(); return@setOnClickListener }
+                    if (on) s.stopMacro() else if (s.runMacro(name)) { toast("Mở game rồi để macro tự chạy"); moveTaskToBack(true) }
+                    macroSig = ""; renderMacros()
+                }
+            }, LinearLayout.LayoutParams(dp(76), dp(40)))
+            macroBox.addView(row, lp(if (k == 0) 0 else 12))
+        }
     }
 
     private fun onToggle() {
@@ -298,6 +382,8 @@ class MainActivity : ComponentActivity() {
         statusText.text = text
 
         a11yRow.visibility = if (ControlAccessibilityService.instance != null) View.GONE else View.VISIBLE
+        battRow.visibility = if (batteryOk()) View.GONE else View.VISIBLE
+        renderMacros()
 
         startBtn.text = if (running) "Dừng chia sẻ" else "Bắt đầu chia sẻ màn hình"
         startBtn.background = if (running) rounded(0x33FF5D6C, 16, BAD) else gradient(16)

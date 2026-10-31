@@ -5,7 +5,14 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.wifi.WifiManager
+import android.os.BatteryManager
+import android.os.PowerManager
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.hardware.display.DisplayManager
@@ -109,6 +116,13 @@ class ShareService : Service() {
     private var capH = 0
     private var displayListener: DisplayManager.DisplayListener? = null
 
+    // Long idle-game sessions: keep CPU, Wi-Fi and (dimmed) screen awake, react to network changes.
+    private val mainH = Handler(Looper.getMainLooper())
+    private var cpuLock: PowerManager.WakeLock? = null
+    private var screenLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+    private var netCallback: ConnectivityManager.NetworkCallback? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -129,6 +143,7 @@ class ShareService : Service() {
         startForegroundNotification()
         running = true
         state = STATE_CONNECTING
+        acquireLocks()
 
         thread(name = "init") {
             try {
@@ -166,6 +181,59 @@ class ShareService : Service() {
             startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
         } else {
             startForeground(1, n)
+        }
+    }
+
+    // ---------------------------------------------------------------- stay alive
+
+    @Suppress("DEPRECATION")
+    private fun acquireLocks() {
+        try {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            cpuLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "remotescreen:cpu").apply { setReferenceCounted(false); acquire() }
+            // The screen must stay on, otherwise capture goes black and most games pause. Dim to save battery.
+            if (getSharedPreferences("game", MODE_PRIVATE).getBoolean("keepScreen", true)) {
+                screenLock = pm.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE, "remotescreen:screen")
+                    .apply { setReferenceCounted(false); acquire() }
+            }
+            val wm = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+            val mode = if (Build.VERSION.SDK_INT >= 29) WifiManager.WIFI_MODE_FULL_LOW_LATENCY else WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            wifiLock = wm.createWifiLock(mode, "remotescreen:wifi").apply { setReferenceCounted(false); acquire() }
+        } catch (t: Throwable) { Log.w(TAG, "locks", t) }
+        try {
+            val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+            netCallback = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    // Network came back (or switched Wi-Fi <-> 4G): reconnect at once instead of waiting for timeouts.
+                    if (!stopping && state == STATE_CONNECTING) { try { ws?.cancel() } catch (_: Throwable) {} }
+                }
+            }.also { cm.registerDefaultNetworkCallback(it) }
+        } catch (t: Throwable) { Log.w(TAG, "net cb", t) }
+    }
+
+    private fun releaseLocks() {
+        try { cpuLock?.release() } catch (_: Throwable) {}
+        try { screenLock?.release() } catch (_: Throwable) {}
+        try { wifiLock?.release() } catch (_: Throwable) {}
+        try { netCallback?.let { (getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager).unregisterNetworkCallback(it) } } catch (_: Throwable) {}
+        cpuLock = null; screenLock = null; wifiLock = null; netCallback = null
+    }
+
+    private fun deviceStats(): JSONObject {
+        val b = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val lvl = b?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = b?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+        val temp = (b?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0) / 10.0
+        val plugged = (b?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+        return JSONObject().put("t", "stat").put("batt", if (lvl >= 0) lvl * 100 / maxOf(scale, 1) else -1)
+            .put("chg", plugged).put("temp", temp)
+    }
+
+    private val statTick = object : Runnable {
+        override fun run() {
+            if (dc == null || stopping) return
+            thread { sendToController(deviceStats()) }
+            mainH.postDelayed(this, 10_000)
         }
     }
 
@@ -431,7 +499,13 @@ class ShareService : Service() {
                         ControlAccessibilityService.imeListener = { on, text, pw ->
                             sendToController(JSONObject().put("t", "ime").put("on", on).put("text", text).put("pw", pw))
                         }
-                        ControlAccessibilityService.instance?.reportFocus(true)
+                        ControlAccessibilityService.eventListener = { o -> sendToController(o) }
+                        sendToController(JSONObject().put("t", "hello").put("caps", JSONArray().put("mt").put("macro").put("stat").put("watch"))
+                            .put("a11y", ControlAccessibilityService.instance != null))
+                        mainH.post {
+                            ControlAccessibilityService.instance?.let { it.reportFocus(true); it.emitState() }
+                            mainH.removeCallbacks(statTick); statTick.run()
+                        }
                     }
                 }
                 override fun onMessage(buffer: DataChannel.Buffer) {
@@ -461,6 +535,9 @@ class ShareService : Service() {
 
     private fun closePeer() {
         ControlAccessibilityService.imeListener = null
+        ControlAccessibilityService.eventListener = null
+        mainH.removeCallbacks(statTick)
+        ControlAccessibilityService.instance?.touchCancel()
         try { dc?.close(); dc?.dispose() } catch (_: Throwable) {}
         try { pc?.close(); pc?.dispose() } catch (_: Throwable) {}
         dc = null
@@ -474,7 +551,22 @@ class ShareService : Service() {
             return
         }
         val svc = ControlAccessibilityService.instance ?: return
+        val f = { k: String -> o.getDouble(k).toFloat() }
         when (o.getString("t")) {
+            // realtime multi-touch (game mode)
+            "td" -> svc.touchDown(o.getInt("i"), f("x"), f("y"))
+            "tm" -> { val p = o.getJSONArray("p"); for (k in 0 until p.length()) { val a = p.getJSONArray(k); svc.touchMove(a.getInt(0), a.getDouble(1).toFloat(), a.getDouble(2).toFloat()) } }
+            "tu" -> svc.touchUp(o.getInt("i"))
+            "tc" -> svc.touchCancel()
+            // macros, game watch
+            "macro_save" -> mainH.post { svc.saveMacro(o.getJSONObject("m")) }
+            "macro_del" -> mainH.post { svc.deleteMacro(o.getString("name")) }
+            "macro_run" -> mainH.post { svc.runMacro(o.getString("name")) }
+            "macro_stop" -> mainH.post { svc.stopMacro() }
+            "watch" -> mainH.post { svc.setWatch(o.optBoolean("on"), o.optBoolean("relaunch")) }
+            "open_game" -> mainH.post { svc.openWatched() }
+            "game_state" -> mainH.post { svc.emitState() }
+            "keep_screen" -> { getSharedPreferences("game", MODE_PRIVATE).edit().putBoolean("keepScreen", o.optBoolean("on", true)).apply() }
             "tap" -> svc.tap(o.getDouble("x").toFloat(), o.getDouble("y").toFloat(), o.optLong("d", 50))
             "swipe" -> svc.swipe(
                 o.getDouble("x1").toFloat(), o.getDouble("y1").toFloat(),
@@ -492,6 +584,7 @@ class ShareService : Service() {
         if (stopping) { stopSelf(); return }
         stopping = true
         running = false
+        releaseLocks()
         state = STATE_CONNECTING
         try { ws?.close(1000, "bye") } catch (_: Throwable) {}
         try {

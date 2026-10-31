@@ -270,3 +270,16 @@ setInterval(() => {
 }, 25000);
 
 server.listen(PORT, () => console.log(`Remote Screen server on :${PORT}  (web client at /), ${LOCAL_TURN ? 'built-in TURN on udp :' + TURN_PORT : HOSTED_TURN ? 'hosted TURN' : 'no TURN'}`));
+
+// Render's free plan sleeps after 15 minutes without incoming HTTP traffic, which makes the next
+// connection wait 30-50 s. Ping our own public URL (through Render's proxy) every 10 minutes.
+// One service running 24/7 fits inside the free 750 instance-hours per month.
+const SELF_URL = process.env.RENDER_EXTERNAL_URL || process.env.SELF_URL;
+if (SELF_URL && process.env.KEEP_AWAKE !== '0') {
+  const ping = () => fetch(SELF_URL.replace(/\/$/, '') + '/healthz', { cache: 'no-store' })
+    .then((r) => r.status !== 200 && console.warn('keep-awake ping status', r.status))
+    .catch((e) => console.warn('keep-awake ping failed', e.message));
+  setInterval(ping, 10 * 60 * 1000).unref();
+  setTimeout(ping, 30 * 1000).unref();
+  console.log('keep-awake: pinging', SELF_URL, 'every 10 min');
+}

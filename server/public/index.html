@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Remote">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
 <title>Remote Screen</title>
 <style>
@@ -82,31 +82,87 @@
   .spin { width: 18px; height: 18px; border: 2.5px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: sp .8s linear infinite; }
   @keyframes sp { to { transform: rotate(360deg); } }
 
-  /* ---------- session screen ---------- */
+  /* ---------- session screen (edge-to-edge) ---------- */
   #session { position: fixed; inset: 0; background: #000; overflow: hidden; }
-  #vbox { position: absolute; left: var(--sal); right: var(--sar); top: calc(var(--sat) + 112px); bottom: calc(var(--sab) + 84px);
-    overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  #vbox { position: absolute; inset: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  body.shownav #vbox { bottom: calc(var(--sab) + 64px); }
   video { position: absolute; transform-origin: 50% 50%; outline: none; pointer-events: none; background: #000; }
-  .top { position: absolute; left: 0; right: 0; top: 0; padding: calc(var(--sat) + 10px) calc(var(--sar) + 12px) 10px calc(var(--sal) + 12px);
-    display: flex; align-items: center; gap: 8px; background: linear-gradient(180deg, rgba(11,13,18,.95), rgba(11,13,18,.6)); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); z-index: 3; }
-  .chip { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 4px 0 12px; border-radius: 12px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.08); flex: none; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 3px rgba(255,181,71,.2); flex: none; }
-  .dot.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(47,209,122,.2); }
-  .chip .idt { font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .05em; font-size: 14px; white-space: nowrap; }
+  .ripple { position: absolute; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; pointer-events: none; z-index: 2;
+    border: 2px solid rgba(255,255,255,.95); background: rgba(79,140,255,.35); box-shadow: 0 0 0 2px rgba(0,0,0,.35);
+    animation: rp .45s ease-out forwards; }
+  .ripple.long { background: rgba(255,181,71,.45); }
+  .ripple.dot { width: 10px; height: 10px; margin: -5px 0 0 -5px; animation-duration: .6s; }
+  @keyframes rp { from { transform: scale(.4); opacity: 1; } to { transform: scale(1.5); opacity: 0; } }
+  #loupe { position: absolute; width: 120px; height: 120px; border-radius: 50%; pointer-events: none; z-index: 3;
+    border: 3px solid #fff; box-shadow: 0 8px 24px rgba(0,0,0,.6); background: #000; }
+  #cursor { position: absolute; width: 22px; height: 22px; margin: -2px 0 0 -2px; pointer-events: none; z-index: 3;
+    background: no-repeat center/contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 2l7.5 19 2.6-7.9L21 10.5z' fill='%23fff' stroke='%23000' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E");
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+  #cursor.drag { filter: drop-shadow(0 0 4px var(--warn)); }
+
+  /* floating handle */
+  #fab { position: absolute; z-index: 6; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+    background: rgba(22,26,35,.55); border: 1px solid rgba(255,255,255,.18); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 6px 18px rgba(0,0,0,.45); touch-action: none; opacity: .75; transition: opacity .2s; }
+  #fab:active, #fab.drag { opacity: 1; }
+  #fab .dot { width: 12px; height: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 3px rgba(255,181,71,.25); flex: none; }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(47,209,122,.25); }
+  .dot.turn { background: var(--warn); box-shadow: 0 0 0 3px rgba(255,181,71,.25); }
+
+  #fab.rec { border-color: var(--bad); box-shadow: 0 0 0 3px rgba(255,93,108,.45), 0 6px 18px rgba(0,0,0,.45); opacity: 1; animation: recp 1.2s ease-in-out infinite; }
+  #fab.pick { border-color: var(--warn); box-shadow: 0 0 0 3px rgba(255,181,71,.5); opacity: 1; }
+  @keyframes recp { 50% { box-shadow: 0 0 0 7px rgba(255,93,108,.15), 0 6px 18px rgba(0,0,0,.45); } }
+  .dot.hot { background: var(--bad); box-shadow: 0 0 0 3px rgba(255,93,108,.3); }
+  .gbtns { display: flex; gap: 8px; }
+  .gbtns .kbtn { flex: 1; height: 44px; font-size: 14px; }
+  .kbtn.rec { background: rgba(255,93,108,.15); border-color: var(--bad); color: #ffb3ba; }
+  .mlist { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .mrow { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border-radius: 14px; background: var(--card2); border: 1px solid var(--line); }
+  .mrow .mn { flex: 1; min-width: 0; }
+  .mrow .mn b { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mrow .mn small { color: var(--dim); font-size: 12px; }
+  .mrow .kbtn { height: 36px; padding: 0 12px; font-size: 13px; }
+  .mrow .kbtn.on { background: rgba(255,93,108,.15); border-color: var(--bad); color: #ffb3ba; }
+  .savebox { margin-top: 10px; padding: 12px; border-radius: 14px; background: var(--bg); border: 1px solid var(--line2); display: flex; flex-direction: column; gap: 8px; }
+  .savebox .inp { height: 44px; font-size: 15px; }
+  .savebox select { height: 44px; border-radius: 14px; background: var(--bg); color: var(--text); border: 1px solid var(--line2); padding: 0 10px; font: inherit; flex: 1; }
+  .savebox .row { gap: 8px; }
+  .savebox label { font-size: 12px; color: var(--muted); }
+  .alertbar { position: absolute; left: 50%; top: calc(var(--sat) + 96px); transform: translateX(-50%); z-index: 9; width: min(440px, calc(100% - 24px));
+    display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 14px; border-radius: 14px; background: rgba(60,18,26,.95); border: 1px solid var(--bad); font-size: 14px; }
+  .alertbar > span { flex: 1; min-width: 0; }
+  .alertbar .kbtn { height: 36px; padding: 0 12px; font-size: 13px; }
+
+  /* optional mini navigation bar */
+  .minibar { position: absolute; left: 50%; bottom: calc(var(--sab) + 8px); transform: translateX(-50%); z-index: 4; display: flex; gap: 4px; padding: 4px;
+    border-radius: 16px; background: rgba(22,26,35,.75); border: 1px solid rgba(255,255,255,.1); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .minibar button { width: 64px; height: 44px; border-radius: 12px; display: grid; place-items: center; color: #dfe5f2; }
+  .minibar button:active { background: rgba(255,255,255,.14); }
+
+  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--muted); z-index: 2; pointer-events: none; text-align: center; padding: 20px; }
+  .overlay .spin { width: 34px; height: 34px; border-width: 3px; border-color: rgba(255,255,255,.15); border-top-color: var(--accent); }
+  .overlay.dim { background: rgba(0,0,0,.55); }
+
+  /* control panel */
+  .scrim { position: absolute; inset: 0; z-index: 7; background: rgba(0,0,0,.35); }
+  .menu { position: absolute; z-index: 8; left: 50%; bottom: calc(var(--sab) + 12px); transform: translateX(-50%);
+    width: min(420px, calc(100% - 20px)); max-height: calc(100% - var(--sat) - 30px); overflow: auto; overscroll-behavior: contain;
+    background: rgba(22,26,35,.97); border: 1px solid var(--line2); border-radius: 22px; padding: 12px; box-shadow: 0 20px 50px rgba(0,0,0,.6);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+  .mhead { display: flex; align-items: center; gap: 8px; }
+  .chip { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 4px 0 12px; border-radius: 12px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); flex: none; }
+  .chip .idt { font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .05em; font-size: 15px; white-space: nowrap; }
   .chip .iconbtn { width: 30px; height: 30px; border-radius: 9px; }
   .grow { flex: 1; }
-  .tb { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.08); flex: none; }
+  .tb { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.08); flex: none; }
   .tb:active { background: rgba(255,255,255,.16); }
   .tb.danger { color: var(--bad); }
-
-  /* status strip: connection + TURN quota, outside the video */
-  .status { position: absolute; left: calc(var(--sal) + 12px); right: calc(var(--sar) + 12px); top: calc(var(--sat) + 60px); z-index: 3;
-    height: 46px; padding: 6px 12px; border-radius: 14px; background: var(--card); border: 1px solid var(--line);
-    display: flex; flex-direction: column; justify-content: center; gap: 5px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .status { margin-top: 10px; padding: 8px 12px; border-radius: 14px; background: var(--bg); border: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .srow { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; }
   .srow > span { overflow: hidden; text-overflow: ellipsis; }
-  .badge { flex: none; padding: 1px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
-    background: rgba(255,255,255,.08); color: var(--muted); }
+  .badge { flex: none; padding: 1px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; background: rgba(255,255,255,.08); color: var(--muted); }
   .badge.p2p { background: rgba(47,209,122,.15); color: var(--ok); }
   .badge.turn { background: rgba(255,181,71,.15); color: var(--warn); }
   #stext { color: #c9d1e3; }
@@ -116,24 +172,33 @@
   .bar.warn i { background: linear-gradient(90deg, var(--warn), #ffd38a); }
   .bar.bad i { background: linear-gradient(90deg, var(--bad), #ff97a1); }
   #quota.warn { color: #ffd38a; } #quota.bad { color: #ffb3ba; }
-  #zoomchip { position: absolute; right: calc(var(--sar) + 12px); bottom: calc(var(--sab) + 96px); z-index: 3;
-    padding: 6px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600; background: rgba(22,26,35,.85); border: 1px solid rgba(255,255,255,.12); }
+  .navrow { display: flex; gap: 8px; margin-top: 10px; }
+  .navrow button { flex: 1; height: 54px; border-radius: 14px; display: grid; place-items: center; background: var(--card2); border: 1px solid var(--line2); color: #e3e8f4; }
+  .navrow button:active { background: var(--line2); }
+  .acts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
+  .acts button { height: 60px; border-radius: 14px; background: var(--card2); border: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: var(--muted); }
+  .acts button svg { color: #e3e8f4; }
+  .acts button:active { background: var(--line2); }
+  .menu h4 { margin: 14px 4px 8px; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+  .seg { display: flex; gap: 4px; padding: 4px; background: var(--bg); border-radius: 12px; border: 1px solid var(--line); }
+  .seg button { flex: 1; padding: 8px 4px; border-radius: 9px; font-size: 13px; color: var(--muted); line-height: 1.2; }
+  .seg button small { display: block; font-size: 10.5px; color: var(--dim); margin-top: 2px; }
+  .seg button.on { background: var(--card2); color: var(--text); box-shadow: 0 1px 0 rgba(255,255,255,.06) inset; }
+  .seg button.on small { color: var(--muted); }
+  .mnote { font-size: 12px; color: var(--dim); margin: 6px 4px 0; }
+  .tg { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 4px; font-size: 14px; }
+  .tg small { display: block; color: var(--dim); font-size: 12px; }
+  .sw { position: relative; width: 46px; height: 28px; flex: none; }
+  .sw input { opacity: 0; position: absolute; inset: 0; margin: 0; z-index: 1; cursor: pointer; }
+  .sw span { position: absolute; inset: 0; border-radius: 14px; background: var(--line2); transition: background .2s; }
+  .sw span::after { content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform .2s; }
+  .sw input:checked + span { background: var(--accent); }
+  .sw input:checked + span::after { transform: translateX(18px); }
 
-  .nav { position: absolute; left: 50%; bottom: calc(var(--sab) + 14px); transform: translateX(-50%); z-index: 3;
-    display: flex; gap: 6px; padding: 7px; border-radius: 22px;
-    background: rgba(22,26,35,.82); border: 1px solid rgba(255,255,255,.09); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-    box-shadow: 0 14px 36px rgba(0,0,0,.5); }
-  .nav button { width: 70px; height: 52px; border-radius: 16px; display: grid; place-items: center; color: #dfe5f2; transition: background .12s, transform .08s; }
-  .nav button:active { background: rgba(255,255,255,.14); transform: scale(.94); }
-  .nav .sep { width: 1px; background: rgba(255,255,255,.08); margin: 8px 2px; }
-
-  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--muted); z-index: 2; pointer-events: none; text-align: center; padding: 20px; }
-  .overlay .spin { width: 34px; height: 34px; border-width: 3px; border-color: rgba(255,255,255,.15); border-top-color: var(--accent); }
-  .overlay.dim { background: rgba(0,0,0,.55); }
-
-  .sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; padding: 14px calc(var(--sar) + 14px) calc(var(--sab) + 14px) calc(var(--sal) + 14px);
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 9; padding: 14px calc(var(--sar) + 14px) calc(var(--sab) + 14px) calc(var(--sal) + 14px);
     background: var(--card); border-top: 1px solid var(--line); border-radius: 20px 20px 0 0; box-shadow: 0 -20px 40px rgba(0,0,0,.5);
     transform: translateY(110%); transition: transform .22s ease; }
+  .sheet:not(.open) { visibility: hidden; transition: transform .22s ease, visibility 0s .22s; }
   .sheet.open { transform: none; }
   .sheet .hint { font-size: 12px; color: var(--muted); margin: 0 2px 8px; display: flex; align-items: center; gap: 6px; }
   .sheet .hint b { color: var(--ok); }
@@ -146,39 +211,17 @@
   .keys { display: flex; gap: 8px; margin-top: 10px; }
   .keys .kbtn { flex: 1; height: 42px; font-weight: 500; font-size: 14px; }
 
-  .menu { position: absolute; top: calc(var(--sat) + 56px); right: calc(var(--sar) + 10px); z-index: 6; width: 268px; max-width: calc(100% - 20px);
-    background: rgba(22,26,35,.97); border: 1px solid var(--line2); border-radius: 18px; padding: 10px; box-shadow: 0 20px 50px rgba(0,0,0,.6);
-    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
-  .menu h4 { margin: 6px 6px 8px; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
-  .seg { display: flex; gap: 4px; padding: 4px; background: var(--bg); border-radius: 12px; border: 1px solid var(--line); }
-  .seg button { flex: 1; padding: 8px 4px; border-radius: 9px; font-size: 13px; color: var(--muted); line-height: 1.2; }
-  .seg button small { display: block; font-size: 10.5px; color: var(--dim); margin-top: 2px; }
-  .seg button.on { background: var(--card2); color: var(--text); box-shadow: 0 1px 0 rgba(255,255,255,.06) inset; }
-  .seg button.on small { color: var(--muted); }
-  .mitem { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 8px; border-radius: 11px; text-align: left; font-size: 14.5px; }
-  .mitem:active { background: var(--card2); }
-  .mitem svg { color: var(--muted); }
-  .mnote { font-size: 12px; color: var(--dim); margin: 8px 6px 2px; }
-  .msep { height: 1px; background: var(--line); margin: 8px 2px; }
-
-  #toast { position: fixed; left: 50%; top: calc(var(--sat) + 70px); transform: translate(-50%, -20px); opacity: 0; z-index: 10;
+  #toast { position: fixed; left: 50%; top: calc(var(--sat) + 20px); transform: translate(-50%, -20px); opacity: 0; z-index: 10;
     background: rgba(28,33,44,.96); border: 1px solid var(--line2); padding: 10px 16px; border-radius: 12px; font-size: 14px;
     transition: opacity .2s, transform .2s; pointer-events: none; max-width: calc(100% - 32px); text-align: center; }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
 
-  @media (max-width: 380px) { .chip .idt { font-size: 13px; letter-spacing: .02em; } .tb { width: 34px; } }
-  @media (min-width: 760px) { #home { padding-top: 10vh; } .nav button { width: 84px; } }
-
-  /* phone held sideways: slim top bar, navigation on the right edge */
+  @media (min-width: 760px) { #home { padding-top: 10vh; } }
   @media (orientation: landscape) and (max-height: 540px) {
-    .top { padding-top: calc(var(--sat) + 6px); padding-bottom: 6px; }
-    #vbox { top: calc(var(--sat) + 50px); bottom: var(--sab); right: calc(var(--sar) + 82px); }
-    .status { top: calc(var(--sat) + 4px); left: 50%; right: auto; transform: translateX(-50%); width: min(380px, calc(100% - 400px)); height: 42px; padding: 4px 10px; gap: 3px; }
-    .nav { left: auto; right: calc(var(--sar) + 10px); top: 50%; bottom: auto; transform: translateY(-50%); flex-direction: column; }
-    .nav button { width: 56px; height: 56px; }
-    .nav .sep { width: auto; height: 1px; margin: 2px 8px; }
-    #zoomchip { right: calc(var(--sar) + 92px); bottom: calc(var(--sab) + 12px); }
-    .menu { top: calc(var(--sat) + 50px); max-height: calc(100% - 60px); overflow: auto; }
+    body.shownav #vbox { bottom: 0; right: calc(var(--sar) + 64px); }
+    body.shownav .minibar { left: auto; right: calc(var(--sar) + 6px); top: 50%; bottom: auto; transform: translateY(-50%); flex-direction: column; }
+    .minibar button { width: 52px; height: 52px; }
+    .menu { bottom: 8px; max-height: calc(100% - 16px); }
   }
 </style>
 </head>
@@ -223,36 +266,86 @@
 <section id="session" class="hidden">
   <div id="vbox">
     <video id="video" autoplay playsinline muted tabindex="0"></video>
+    <div id="cursor" class="hidden"></div>
+    <canvas id="loupe" class="hidden" width="120" height="120"></canvas>
   </div>
   <div class="overlay" id="ov"><div class="spin"></div><div id="ovtxt">Đang chờ hình ảnh…</div></div>
 
-  <div class="top">
-    <div class="chip">
-      <span class="dot" id="dot"></span>
-      <span class="idt" id="sid">—</span>
-      <button class="iconbtn" id="copySid" aria-label="Copy ID"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
-    </div>
-    <span class="grow"></span>
-    <button class="tb" id="kb" aria-label="Bàn phím"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M9 15h6"/></svg></button>
-    <button class="tb" id="more" aria-label="Tuỳ chọn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h10M4 18h16"/><circle cx="18" cy="12" r="2"/></svg></button>
-    <button class="tb danger" id="bye" aria-label="Ngắt kết nối"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+  <button id="fab" aria-label="Mở bảng điều khiển"><span class="dot" id="dot"></span></button>
+
+  <div class="minibar hidden" id="minibar">
+    <button data-key="back" aria-label="Quay lại"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M17 4.5v15L5 12z"/></svg></button>
+    <button data-key="home" aria-label="Màn hình chính"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="7.5"/></svg></button>
+    <button data-key="recents" aria-label="Đa nhiệm"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg></button>
   </div>
 
-  <div class="status" id="status">
-    <div class="srow"><span class="badge" id="badge">…</span><span id="stext">Đang kết nối…</span><span class="qlabel" id="qlabel"></span></div>
-    <div class="srow" id="qrow"><div class="bar" id="qbarw"><i id="qbar"></i></div><span id="quota"></span></div>
-  </div>
-  <button id="zoomchip" class="hidden">1.0× · Đặt lại</button>
-
-  <div class="nav" id="nav">
-    <button data-key="back" aria-label="Quay lại"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M17 4.5v15L5 12z"/></svg></button>
-    <span class="sep"></span>
-    <button data-key="home" aria-label="Màn hình chính"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="7.5"/></svg></button>
-    <span class="sep"></span>
-    <button data-key="recents" aria-label="Đa nhiệm"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg></button>
-  </div>
-
+  <div class="alertbar hidden" id="alertbar"><span id="alerttxt"></span><button class="kbtn" id="alertOpen">Mở game</button><button class="kbtn" id="alertClose">✕</button></div>
+  <div class="scrim hidden" id="scrim"></div>
   <div class="menu hidden" id="menu">
+    <div class="mhead">
+      <div class="chip">
+        <span class="idt" id="sid">—</span>
+        <button class="iconbtn" id="copySid" aria-label="Copy ID"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+      </div>
+      <span class="grow"></span>
+      <button class="tb" id="menuClose" aria-label="Đóng"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></button>
+    </div>
+    <div class="status" id="status">
+      <div class="srow"><span class="badge" id="badge">…</span><span id="stext">Đang kết nối…</span><span class="qlabel" id="qlabel"></span></div>
+      <div class="srow" id="qrow"><div class="bar" id="qbarw"><i id="qbar"></i></div><span id="quota"></span></div>
+    </div>
+    <div class="navrow">
+      <button data-key="back" aria-label="Quay lại"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M17 4.5v15L5 12z"/></svg></button>
+      <button data-key="home" aria-label="Màn hình chính"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="7.5"/></svg></button>
+      <button data-key="recents" aria-label="Đa nhiệm"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg></button>
+    </div>
+    <div class="acts">
+      <button id="kb"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M9 15h6"/></svg>Bàn phím</button>
+      <button id="notif"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>Thông báo</button>
+      <button id="fs"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Toàn MH</button>
+      <button id="bye" style="color:var(--bad)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--bad)" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>Ngắt</button>
+    </div>
+
+    <div id="gameOnly" class="hidden">
+      <h4>Chơi game</h4>
+      <label class="tg"><span>Chế độ game<small>Chạm nhiều ngón cùng lúc, kéo theo thời gian thực (2 ngón không phóng to)</small></span><span class="sw"><input type="checkbox" id="optGame"><span></span></span></label>
+      <div class="mnote" id="gstat"></div>
+
+      <h4>Auto click / Macro</h4>
+      <div class="gbtns"><button class="kbtn" id="recBtn">● Ghi thao tác</button><button class="kbtn" id="autoBtn">Auto chạm 1 điểm</button></div>
+      <div class="savebox hidden" id="saveBox">
+        <label for="mname">Tên macro</label>
+        <input class="inp" id="mname" maxlength="30" autocomplete="off">
+        <div class="row"><select id="mloops"><option value="0">Lặp mãi</option><option value="1">Chạy 1 lần</option><option value="5">Lặp 5 lần</option><option value="10">Lặp 10 lần</option><option value="50">Lặp 50 lần</option></select>
+          <select id="mgap"><option value="300">Nghỉ 0,3 giây</option><option value="1000" selected>Nghỉ 1 giây</option><option value="3000">Nghỉ 3 giây</option><option value="10000">Nghỉ 10 giây</option><option value="60000">Nghỉ 1 phút</option></select></div>
+        <div class="mnote" id="minfo" style="margin:0"></div>
+        <div class="row"><button class="kbtn" id="mcancel" style="flex:1">Huỷ</button><button class="kbtn primary" id="msave" style="flex:2">Lưu vào máy Android</button></div>
+      </div>
+      <div class="mlist" id="mlist"></div>
+      <div class="mnote">Macro chạy ngay trên máy Android: tắt iPhone hay ngắt kết nối vẫn chạy. Dừng ở đây hoặc ở thanh thông báo Android.</div>
+
+      <h4>Theo dõi game</h4>
+      <label class="tg"><span>Báo khi game bị thoát<small id="watchInfo">Ghim app đang mở trên máy Android</small></span><span class="sw"><input type="checkbox" id="optWatch"><span></span></span></label>
+      <label class="tg"><span>Tự mở lại game khi bị thoát<small>Macro tự tạm dừng khi game không ở màn hình chính</small></span><span class="sw"><input type="checkbox" id="optRelaunch"><span></span></span></label>
+      <label class="tg"><span>Giữ màn hình Android luôn sáng<small>Sáng mờ để đỡ tốn pin · áp dụng từ lần chia sẻ sau</small></span><span class="sw"><input type="checkbox" id="optKeep" checked><span></span></span></label>
+    </div>
+    <div class="mnote hidden" id="oldApp">Cập nhật app Android lên bản mới để dùng chế độ game, auto click và theo dõi game.</div>
+
+    <div id="touchOpts">
+    <h4>Cách chạm</h4>
+    <div class="seg" id="tseg">
+      <button data-t="direct">Chạm trực tiếp<small>bấm đâu ăn đó</small></button>
+      <button data-t="pad">Chuột (trackpad)<small>chính xác nhất</small></button>
+    </div>
+    <div class="mnote" id="tnote"></div>
+    <label class="tg"><span>Kính lúp khi giữ ngón tay<small>Giữ ~0,3 giây để soi chỗ bấm, nhả tay để bấm</small></span><span class="sw"><input type="checkbox" id="optLoupe"><span></span></span></label>
+    </div>
+    <label class="tg"><span>Hiện điểm chạm<small>Vòng tròn đánh dấu chỗ vừa bấm</small></span><span class="sw"><input type="checkbox" id="optRipple"><span></span></span></label>
+    <label class="tg"><span>Luôn hiện 3 nút điều hướng<small>Thanh Back · Home · Đa nhiệm nhỏ ở cạnh màn hình</small></span><span class="sw"><input type="checkbox" id="optNav"><span></span></span></label>
+
+    <h4>Phóng to</h4>
+    <div class="row"><span class="mnote" style="margin:0" id="zlabel">1.0× · dùng 2 ngón để phóng to/kéo hình</span><button class="kbtn" id="zreset" style="height:38px">Đặt lại</button></div>
+
     <h4>Chất lượng hình</h4>
     <div class="seg" id="qseg">
       <button data-q="eco">Tiết kiệm<small>15 fps</small></button>
@@ -260,16 +353,13 @@
       <button data-q="hi">Mượt<small>60 fps</small></button>
     </div>
     <div class="mnote" id="qnote"></div>
-    <h4 style="margin-top:12px">Xoay hình</h4>
+    <h4>Xoay hình</h4>
     <div class="seg" id="rseg">
       <button data-r="auto">Tự động</button>
       <button data-r="0">Đứng</button>
       <button data-r="90">Nằm ngang</button>
     </div>
-    <div class="msep"></div>
-    <button class="mitem" id="notif"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>Kéo thanh thông báo</button>
-    <button class="mitem" id="fs"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Toàn màn hình</button>
-    <div class="mnote">Dùng 2 ngón để phóng to hoặc kéo hình.</div>
+    <div class="mnote" id="pcnote">Máy tính: chuột phải = Back · lăn chuột = cuộn · gõ phím trực tiếp · Ctrl+V để dán chữ.</div>
   </div>
 
   <div class="sheet" id="sheet">
@@ -297,7 +387,7 @@
   const QUALITY = {
     eco: { fps: 15, long: 720, br: 700000, label: 'Tiết kiệm' },
     bal: { fps: 30, long: 1280, br: 2500000, label: 'Cân bằng' },
-    hi: { fps: 60, long: 1280, br: 6000000, label: 'Mượt' },
+    hi: { fps: 60, long: 960, br: 6000000, label: 'Mượt' },
   };
   const RECONNECT_MS = 120000;
 
@@ -434,6 +524,7 @@
       const d = m.data;
       if (d.sdp) {
         await pc.setRemoteDescription(d.sdp);
+        preferH264();
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         ws.send(JSON.stringify({ type: 'signal', data: { sdp: pc.localDescription } }));
@@ -463,6 +554,10 @@
     busy(false);
     keepAwake();
     syncMenu();
+    applyNav();
+    placeFab();
+    cur = { x: 0.5, y: 0.5 };
+    resetGame();
   }
 
   function closePeer() {
@@ -484,6 +579,20 @@
     retryTimer = setTimeout(async () => { if (!inSession) return; await loadConfig(); connect(); }, 2500);
   }
 
+  // H.264 is hardware-encoded on almost every Android phone and hardware-decoded on iPhone:
+  // much higher and steadier fps than VP8, which many phones encode in software.
+  function preferH264() {
+    try {
+      const caps = RTCRtpReceiver.getCapabilities && RTCRtpReceiver.getCapabilities('video');
+      if (!caps) return;
+      const rank = (c) => (/h264/i.test(c.mimeType) ? (/42e01f|42001f/.test(c.sdpFmtpLine || '') ? 0 : 1) : /vp8/i.test(c.mimeType) ? 2 : 3);
+      const codecs = caps.codecs.slice().sort((a, b) => rank(a) - rank(b));
+      pc.getTransceivers().forEach((t) => {
+        if (t.receiver.track && t.receiver.track.kind === 'video' && t.setCodecPreferences) t.setCodecPreferences(codecs);
+      });
+    } catch (e) { console.warn('codec pref', e); }
+  }
+
   function createPeer() {
     closePeer();
     pc = new RTCPeerConnection({ iceServers });
@@ -492,7 +601,7 @@
     pc.ondatachannel = (e) => {
       dc = e.channel;
       dc.onopen = () => sendQuality();
-      dc.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.t === 'ime') onIme(m); } catch {} };
+      dc.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.t === 'ime') onIme(m); else onDeviceMsg(m); } catch (err) { console.warn(err); } };
     };
     pc.ontrack = (e) => {
       video.srcObject = e.streams[0];
@@ -514,7 +623,7 @@
     };
     statsTimer = setInterval(updateStats, 1000);
   }
-  video.addEventListener('loadeddata', () => { $('#ov').classList.add('hidden'); layout(); });
+  video.addEventListener('loadeddata', () => { $('#ov').classList.add('hidden'); layout(); placeCursor(); });
   video.addEventListener('resize', layout);
 
   // ---------- quality ----------
@@ -531,10 +640,10 @@
   async function updateStats() {
     if (!pc) return;
     const stats = await pc.getStats();
-    let rtt = null, fps = null, bytes = null, isRelay = null, pairId = null;
+    let rtt = null, fps = null, bytes = null, isRelay = null, pairId = null, codecId = null;
     stats.forEach((s) => {
       if (s.type === 'transport' && s.selectedCandidatePairId) pairId = s.selectedCandidatePairId;
-      if (s.type === 'inbound-rtp' && s.kind === 'video') { fps = s.framesPerSecond; bytes = s.bytesReceived; }
+      if (s.type === 'inbound-rtp' && s.kind === 'video') { fps = s.framesPerSecond; bytes = s.bytesReceived; codecId = s.codecId; }
     });
     stats.forEach((s) => {
       if (s.type === 'candidate-pair' && (s.id === pairId || (!pairId && s.nominated && s.state === 'succeeded'))) {
@@ -558,11 +667,15 @@
     const parts = [];
     if (rtt != null) parts.push(rtt + ' ms');
     if (fps != null) parts.push(Math.round(fps) + ' fps');
+    const cd = codecId && stats.get(codecId);
+    if (cd && cd.mimeType) parts.push(cd.mimeType.replace('video/', ''));
+    if (devStat && devStat.batt >= 0) parts.push('pin ' + devStat.batt + '%');
     if (bytes != null) parts.push(lastKbps >= 1000 ? (lastKbps / 1000).toFixed(1) + ' Mbps' : lastKbps + ' kbps');
     $('#stext').textContent = parts.join(' · ') || 'Đang kết nối…';
     const bd = $('#badge');
     bd.className = 'badge' + (relay === true ? ' turn' : relay === false ? ' p2p' : '');
     bd.textContent = relay === true ? 'TURN' : relay === false ? 'P2P' : '…';
+    $('#dot').classList.toggle('turn', relay === true);
     renderQuota();
   }
 
@@ -609,7 +722,9 @@
     try { ws && (ws.onclose = null, ws.close()); } catch {}
     ws = null;
     video.srcObject = null;
-    $('#sheet').classList.remove('open', 'live'); $('#menu').classList.add('hidden');
+    $('#sheet').classList.remove('open', 'live'); closeMenu(); hideLoupe(); cursorEl.classList.add('hidden');
+    document.body.classList.remove('shownav');
+    resetGame();
     imeActive = false; sheetByIme = false;
     $('#session').classList.add('hidden');
     $('#home').classList.remove('hidden');
@@ -651,9 +766,8 @@
     video.style.left = (B.width - dispW) / 2 + 'px';
     video.style.top = (B.height - dispH) / 2 + 'px';
     video.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom}) rotate(${rot}deg)`;
-    const zc = $('#zoomchip');
-    zc.classList.toggle('hidden', zoom <= 1.01);
-    zc.textContent = zoom.toFixed(1) + '× · Đặt lại';
+    $('#zlabel').textContent = zoom.toFixed(1) + '× · dùng 2 ngón để phóng to/kéo hình';
+    if (padMode()) placeCursor();
   }
   function clampPan() {
     const B = vbox.getBoundingClientRect();
@@ -663,74 +777,222 @@
     panY = Math.min(my, Math.max(-my, panY));
   }
   function resetZoom() { zoom = 1; panX = panY = 0; layout(); }
-  window.addEventListener('resize', layout);
-  window.addEventListener('orientationchange', () => setTimeout(layout, 300));
-  $('#zoomchip').addEventListener('click', resetZoom);
+  window.addEventListener('resize', () => { layout(); placeFab(); });
+  window.addEventListener('orientationchange', () => setTimeout(() => { layout(); placeFab(); }, 300));
+  $('#zreset').addEventListener('click', () => { resetZoom(); toast('Đã đặt lại 1.0×'); });
 
-  // screen point -> 0..1 coordinates on the Android screen
-  function norm(ev) {
+  // Both directions of the same transform, so what you see is exactly what gets tapped.
+  // client point -> 0..1 coordinates on the Android screen
+  function normXY(cx, cy, clamp) {
     if (!dispW) return null;
     const B = vbox.getBoundingClientRect();
-    let dx = (ev.clientX - (B.left + B.width / 2 + panX)) / zoom;
-    let dy = (ev.clientY - (B.top + B.height / 2 + panY)) / zoom;
+    let dx = (cx - (B.left + B.width / 2 + panX)) / zoom;
+    let dy = (cy - (B.top + B.height / 2 + panY)) / zoom;
     if (rot === 90) { const t = dx; dx = dy; dy = -t; }
-    const x = dx / dispW + 0.5, y = dy / dispH + 0.5;
-    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+    let x = dx / dispW + 0.5, y = dy / dispH + 0.5;
+    if (clamp) { x = Math.min(1, Math.max(0, x)); y = Math.min(1, Math.max(0, y)); }
+    else if (x < 0 || x > 1 || y < 0 || y > 1) return null;
     return { x, y };
+  }
+  const norm = (ev) => normXY(ev.clientX, ev.clientY);
+  // 0..1 Android coordinates -> point inside #vbox (CSS px)
+  function toLocal(p) {
+    const B = vbox.getBoundingClientRect();
+    let dx = (p.x - 0.5) * dispW, dy = (p.y - 0.5) * dispH;
+    if (rot === 90) { const t = dx; dx = -dy; dy = t; }
+    return { x: B.width / 2 + panX + dx * zoom, y: B.height / 2 + panY + dy * zoom };
+  }
+  // screen-pixel movement -> Android-normalized movement (for the trackpad)
+  function normDelta(dx, dy) {
+    dx /= zoom; dy /= zoom;
+    if (rot === 90) { const t = dx; dx = dy; dy = -t; }
+    return { x: dx / dispW, y: dy / dispH };
   }
 
   // ---------- control ----------
   const sendCtl = (o) => { if (dc && dc.readyState === 'open') dc.send(JSON.stringify(o)); };
-  function haptic() { try { navigator.vibrate && navigator.vibrate(8); } catch {} }
+  function haptic(ms) { try { navigator.vibrate && navigator.vibrate(ms || 8); } catch {} }
+  const padMode = () => !gameOn() && pref.get('touch', 'direct') === 'pad';
+  const loupeOn = () => pref.get('loupe', '1') === '1';
+  const rippleOn = () => pref.get('ripple', '1') === '1';
 
+  function ripple(p, kind) {
+    if (!rippleOn() || !p) return;
+    const l = toLocal(p);
+    const r = document.createElement('div');
+    r.className = 'ripple' + (kind ? ' ' + kind : '');
+    r.style.left = l.x + 'px'; r.style.top = l.y + 'px';
+    vbox.appendChild(r);
+    setTimeout(() => r.remove(), 700);
+  }
+  function tapAt(p, d, kind) {
+    if (!p) return;
+    sendCtl({ t: 'tap', x: p.x, y: p.y, d: Math.max(40, Math.min(d || 60, 1500)) });
+    recordStep({ t: 'tap', x: p.x, y: p.y, d: Math.max(40, Math.min(d || 60, 1500)) }, performance.now() - (d || 60));
+    ripple(p, kind || (d >= 450 ? 'long' : ''));
+  }
+  function swipe(a, b, d) {
+    if (!a || !b) return;
+    sendCtl({ t: 'swipe', x1: a.x, y1: a.y, x2: b.x, y2: b.y, d: Math.min(Math.max(d, 60), 1500) });
+    recordStep({ t: 'swipe', x: a.x, y: a.y, x2: b.x, y2: b.y, d: Math.min(Math.max(d, 60), 1500) }, performance.now() - d);
+    ripple(b, 'dot');
+  }
+
+  // --- magnifier ---
+  const loupe = $('#loupe'), lctx = loupe.getContext('2d');
+  let loupeAt = null, loupeRaf = 0;
+  (function sizeLoupe() { const r = Math.min(3, window.devicePixelRatio || 1); loupe.width = loupe.height = 120 * r; lctx.setTransform(r, 0, 0, r, 0, 0); })();
+  function showLoupe(clientX, clientY) {
+    const p = normXY(clientX, clientY, true);
+    if (!p) return;
+    loupeAt = { p, cx: clientX, cy: clientY };
+    const B = vbox.getBoundingClientRect();
+    let lx = clientX - B.left - 60, ly = clientY - B.top - 60 - 95;           // float above the finger
+    if (ly < 4) ly = clientY - B.top - 60 + 95;                              // no room: go below
+    lx = Math.min(B.width - 124, Math.max(4, lx));
+    loupe.style.left = lx + 'px'; loupe.style.top = ly + 'px';
+    loupe.classList.remove('hidden');
+    if (!loupeRaf) loupeRaf = requestAnimationFrame(drawLoupe);
+  }
+  function drawLoupe() {
+    loupeRaf = 0;
+    if (!loupeAt) return;
+    const vw = video.videoWidth, vh = video.videoHeight;
+    lctx.fillStyle = '#000'; lctx.fillRect(0, 0, 120, 120);
+    if (vw) {
+      const s = 2.5 * (dispW * zoom) / vw;                                  // 2.5x what is on screen
+      lctx.save();
+      lctx.translate(60, 60); lctx.rotate(rot * Math.PI / 180); lctx.scale(s, s);
+      try { lctx.drawImage(video, -loupeAt.p.x * vw, -loupeAt.p.y * vh, vw, vh); } catch {}
+      lctx.restore();
+    }
+    lctx.strokeStyle = 'rgba(0,0,0,.6)'; lctx.lineWidth = 3;
+    lctx.beginPath(); lctx.moveTo(60, 48); lctx.lineTo(60, 72); lctx.moveTo(48, 60); lctx.lineTo(72, 60); lctx.stroke();
+    lctx.strokeStyle = '#ff5d6c'; lctx.lineWidth = 1.5;
+    lctx.beginPath(); lctx.moveTo(60, 48); lctx.lineTo(60, 72); lctx.moveTo(48, 60); lctx.lineTo(72, 60); lctx.stroke();
+    loupeRaf = requestAnimationFrame(drawLoupe);
+  }
+  function hideLoupe() { loupeAt = null; loupe.classList.add('hidden'); cancelAnimationFrame(loupeRaf); loupeRaf = 0; }
+
+  // --- trackpad cursor ---
+  const cursorEl = $('#cursor');
+  let cur = { x: 0.5, y: 0.5 };
+  function placeCursor() {
+    const show = padMode() && inSession && !!dispW;
+    cursorEl.classList.toggle('hidden', !show);
+    if (!show) return;
+    const l = toLocal(cur);
+    cursorEl.style.left = l.x + 'px'; cursorEl.style.top = l.y + 'px';
+  }
+
+  const TAP_PX = 10;              // finger wobble allowed for a tap (screen px, independent of zoom)
+  const HOLD_LOUPE_MS = 300, LOUPE_LONG_MS = 1200, PAD_LONG_MS = 600, DBL_MS = 260;
   const pts = new Map();
-  let down = null, pinch = null, pinchUsed = false;
+  let g = null, pinch = null, pinchUsed = false;   // g = the current one-finger gesture
+  let padClickT = null, padLastUp = 0;
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+  function cancelGesture() {
+    if (!g) return;
+    clearTimeout(g.holdT); clearTimeout(g.longT);
+    g = null; hideLoupe(); cursorEl.classList.remove('drag');
+  }
+
   vbox.addEventListener('pointerdown', (e) => {
     e.preventDefault();
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     try { vbox.setPointerCapture(e.pointerId); } catch {}
+    if (picking) return finishPick(e);
+    if (gameOn()) return gDown(e);
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pts.size === 1 && !pinchUsed) {
-      const p = norm(e);
-      down = p ? { ...p, t: performance.now(), id: e.pointerId } : null;
-      if (e.pointerType === 'mouse') video.focus();
+      const now = performance.now();
+      g = { id: e.pointerId, type: e.pointerType, sx: e.clientX, sy: e.clientY, lx: e.clientX, ly: e.clientY, t: now, moved: false, loupe: false, done: false };
+      if (e.pointerType === 'mouse') { video.focus(); g.p0 = norm(e); return; }
+      if (padMode()) {
+        g.pad = true;
+        // double-tap then drag = press-and-drag (swipe) at the cursor
+        if (now - padLastUp < DBL_MS && padClickT) { clearTimeout(padClickT); padClickT = null; g.drag = true; g.p0 = { ...cur }; cursorEl.classList.add('drag'); haptic(); }
+        else g.longT = setTimeout(() => { if (g && !g.moved && !g.drag) { g.done = true; tapAt({ ...cur }, 700, 'long'); haptic(20); } }, PAD_LONG_MS);
+        return;
+      }
+      g.p0 = norm(e);
+      if (g.p0 && loupeOn()) g.holdT = setTimeout(() => { if (g && !g.moved) { g.loupe = true; haptic(); showLoupe(g.lx, g.ly); armLoupeLong(); } }, HOLD_LOUPE_MS);
     } else if (pts.size === 2) {
-      down = null; pinchUsed = true;
+      cancelGesture(); pinchUsed = true;
       const [a, b] = [...pts.values()];
       const B = vbox.getBoundingClientRect();
       pinch = { d0: dist(a, b) || 1, z0: zoom, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, px: panX, py: panY, cx: B.left + B.width / 2, cy: B.top + B.height / 2 };
     }
   });
+  function armLoupeLong() {
+    clearTimeout(g.longT);
+    const me = g;
+    g.longT = setTimeout(() => { if (g === me && g.loupe && !g.done) { g.done = true; tapAt(loupeAt && loupeAt.p, 700, 'long'); haptic(20); hideLoupe(); } }, LOUPE_LONG_MS);
+  }
+
   vbox.addEventListener('pointermove', (e) => {
+    if (slots.has(e.pointerId)) return gMove(e);
     if (!pts.has(e.pointerId)) return;
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch && pts.size >= 2) {
       const [a, b] = [...pts.values()];
       const z = Math.min(5, Math.max(1, pinch.z0 * dist(a, b) / pinch.d0));
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-      // keep the point that was under the fingers under the fingers
       const lx = (pinch.mx - pinch.cx - pinch.px) / pinch.z0, ly = (pinch.my - pinch.cy - pinch.py) / pinch.z0;
       zoom = z; panX = mx - pinch.cx - z * lx; panY = my - pinch.cy - z * ly;
       if (zoom <= 1.01) { zoom = 1; panX = panY = 0; }
       layout();
+      return;
+    }
+    if (!g || e.pointerId !== g.id) return;
+    const ddx = e.clientX - g.lx, ddy = e.clientY - g.ly;
+    g.lx = e.clientX; g.ly = e.clientY;
+    if (!g.moved && Math.hypot(e.clientX - g.sx, e.clientY - g.sy) > TAP_PX) {
+      g.moved = true; clearTimeout(g.holdT);
+      if (!g.loupe) clearTimeout(g.longT);
+    }
+    if (g.pad) {
+      // trackpad: move the cursor (slightly accelerated for long moves)
+      const sp = Math.hypot(ddx, ddy);
+      const k = sp > 18 ? 1.8 : sp > 8 ? 1.3 : 1;
+      const d = normDelta(ddx * k, ddy * k);
+      cur = { x: Math.min(1, Math.max(0, cur.x + d.x)), y: Math.min(1, Math.max(0, cur.y + d.y)) };
+      placeCursor();
+    } else if (g.loupe) {
+      showLoupe(e.clientX, e.clientY);
+      if (Math.hypot(ddx, ddy) > 1.5) armLoupeLong();     // only a still finger triggers the long press
     }
   });
+
   function pointerEnd(e) {
+    if (slots.has(e.pointerId)) return gUp(e);
     pts.delete(e.pointerId);
-    if (down && e.pointerId === down.id && e.type === 'pointerup') {
-      const p = norm(e) || down;
-      const dt = Math.max(1, Math.round(performance.now() - down.t));
-      const d = Math.hypot(p.x - down.x, p.y - down.y);
-      if (d < 0.015 / zoom) sendCtl({ t: 'tap', x: down.x, y: down.y, d: Math.min(dt, 1500) });
-      else sendCtl({ t: 'swipe', x1: down.x, y1: down.y, x2: p.x, y2: p.y, d: Math.min(Math.max(dt, 60), 1500) });
+    if (g && e.pointerId === g.id) {
+      const now = performance.now(), dt = Math.round(now - g.t);
+      const ok = e.type === 'pointerup' && !g.done;
+      if (ok && g.pad) {
+        if (g.drag) { if (g.moved) swipe(g.p0, { ...cur }, dt); else { tapAt({ ...cur }); setTimeout(() => tapAt({ ...cur }), 90); } }
+        else if (!g.moved && dt < PAD_LONG_MS) {
+          // wait a moment: a second tap turns this into a drag
+          const at = { ...cur }; padLastUp = now;
+          padClickT = setTimeout(() => { padClickT = null; tapAt(at); }, DBL_MS);
+        }
+      } else if (ok && g.loupe) {
+        tapAt(loupeAt ? loupeAt.p : g.p0, 60);
+      } else if (ok && g.p0) {
+        const p1 = normXY(e.clientX, e.clientY, true);
+        if (!g.moved) tapAt(g.p0, g.type === 'mouse' || !loupeOn() ? dt : 60);
+        else swipe(g.p0, p1, dt);
+      }
+      cancelGesture();
     }
-    if (!down || e.pointerId === down.id) down = null;
     if (pts.size < 2) pinch = null;
     if (pts.size === 0) pinchUsed = false;
   }
   vbox.addEventListener('pointerup', pointerEnd);
   vbox.addEventListener('pointercancel', pointerEnd);
-  vbox.addEventListener('contextmenu', (e) => e.preventDefault());
+  vbox.addEventListener('contextmenu', (e) => { e.preventDefault(); if (!('ontouchstart' in window) || e.pointerType === 'mouse') { haptic(); sendCtl({ t: 'key', k: 'back' }); } });
   document.addEventListener('gesturestart', (e) => e.preventDefault());
   document.addEventListener('touchmove', (e) => {
     if (inSession && !e.target.closest('.sheet, .menu')) e.preventDefault();
@@ -753,23 +1015,66 @@
     sendCtl({ t: 'swipe', x1: p.x, y1: c(p.y + dy / 2), x2: p.x, y2: c(p.y - dy / 2), d: 200 });
   }, { passive: false });
 
-  video.addEventListener('keydown', (e) => {
+  // PC/laptop: type straight into the phone without opening the keyboard sheet
+  document.addEventListener('keydown', (e) => {
+    if (!inSession || e.target.closest('input, textarea')) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'Backspace') sendCtl({ t: 'key', k: 'backspace' });
     else if (e.key === 'Enter') sendCtl({ t: 'key', k: 'enter' });
-    else if (e.key === 'Escape') sendCtl({ t: 'key', k: 'back' });
+    else if (e.key === 'Escape') { if (!$('#menu').classList.contains('hidden')) return closeMenu(); sendCtl({ t: 'key', k: 'back' }); }
+    else if (e.key === 'Home') sendCtl({ t: 'key', k: 'home' });
     else if (e.key.length === 1) sendCtl({ t: 'text', s: e.key });
     else return;
     e.preventDefault();
   });
+  document.addEventListener('paste', (e) => {
+    if (!inSession || e.target.closest('input, textarea')) return;
+    const s = e.clipboardData && e.clipboardData.getData('text');
+    if (s) { sendCtl({ t: 'text', s }); toast('Đã dán ' + s.length + ' ký tự'); }
+  });
 
   document.querySelectorAll('[data-key]').forEach((b) => b.addEventListener('click', () => { haptic(); sendCtl({ t: 'key', k: b.dataset.key }); }));
+
+  // ---------- floating handle: drag anywhere, snaps to the nearest side, tap = panel ----------
+  const fab = $('#fab');
+  let fabPos = (() => { try { return JSON.parse(pref.get('fab', '')) || null; } catch { return null; } })() || { side: 'r', y: 0.4 };
+  function placeFab(x, y) {
+    const W = window.innerWidth, H = window.innerHeight, S = 46, m = 6;
+    if (x == null) { x = fabPos.side === 'l' ? m : W - S - m; y = fabPos.y * H; }
+    y = Math.min(H - S - m, Math.max(m, y));
+    fab.style.left = x + 'px'; fab.style.top = y + 'px';
+  }
+  let fd = null;
+  fab.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    try { fab.setPointerCapture(e.pointerId); } catch {}
+    const r = fab.getBoundingClientRect();
+    fd = { id: e.pointerId, sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, moved: false };
+  });
+  fab.addEventListener('pointermove', (e) => {
+    if (!fd || e.pointerId !== fd.id) return;
+    if (!fd.moved && Math.hypot(e.clientX - fd.sx, e.clientY - fd.sy) < 8) return;
+    fd.moved = true; fab.classList.add('drag');
+    placeFab(e.clientX - fd.ox, e.clientY - fd.oy);
+  });
+  const fabUp = (e) => {
+    if (!fd || e.pointerId !== fd.id) return;
+    const moved = fd.moved; fd = null; fab.classList.remove('drag');
+    if (moved) {
+      const r = fab.getBoundingClientRect();
+      fabPos = { side: r.left + r.width / 2 < window.innerWidth / 2 ? 'l' : 'r', y: r.top / window.innerHeight };
+      pref.set('fab', JSON.stringify(fabPos));
+      placeFab();
+    } else if (e.type === 'pointerup') { haptic(); toggleMenu(); }
+  };
+  fab.addEventListener('pointerup', fabUp);
+  fab.addEventListener('pointercancel', fabUp);
 
   // ---------- keyboard: manual send, or live mirror of the focused Android text field ----------
   const textin = $('#textin'), sheet = $('#sheet');
   const finePointer = window.matchMedia('(pointer: fine)').matches;
   function openSheet(live) {
-    $('#menu').classList.add('hidden');
+    closeMenu();
     sheet.classList.add('open');
     sheet.classList.toggle('live', !!live);
     textin.placeholder = live ? 'Gõ vào ô đang chọn trên máy Android…' : 'Gõ chữ gửi vào ô đang chọn…';
@@ -809,17 +1114,196 @@
     vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
   }
 
-  // ---------- options menu ----------
+  // ---------- game mode: realtime multi-touch, macros, game watch, device stats ----------
+  let caps = [], gstate = null, devStat = null, recording = null, picking = false, pendingSave = null, audioCtx = null;
+  const gameOn = () => caps.includes('mt') && pref.get('game', '1') === '1';
+  const slots = new Map();               // pointerId -> finger slot on the Android side
+  const pendMove = new Map(); let moveRaf = 0;
+  const r4 = (v) => Math.round(v * 10000) / 10000;
+  function freeSlot() { const used = new Set([...slots.values()].map((s) => s.i)); for (let i = 0; i < 10; i++) if (!used.has(i)) return i; return -1; }
+  function flushMoves() {
+    moveRaf = 0;
+    if (!pendMove.size) return;
+    sendCtl({ t: 'tm', p: [...pendMove.entries()].map(([i, p]) => [i, r4(p.x), r4(p.y)]) });
+    pendMove.clear();
+  }
+  function gDown(e) {
+    const p = normXY(e.clientX, e.clientY, true); if (!p) return;
+    const i = freeSlot(); if (i < 0) return;
+    slots.set(e.pointerId, { i, sx: e.clientX, sy: e.clientY, t: performance.now(), p0: p, last: p });
+    sendCtl({ t: 'td', i, x: r4(p.x), y: r4(p.y) });
+    ripple(p, 'dot');
+  }
+  function gMove(e) {
+    const s = slots.get(e.pointerId); if (!s) return;
+    const p = normXY(e.clientX, e.clientY, true); if (!p) return;
+    s.last = p; pendMove.set(s.i, p);
+    if (!moveRaf) moveRaf = requestAnimationFrame(flushMoves);
+  }
+  function gUp(e) {
+    const s = slots.get(e.pointerId); if (!s) return;
+    slots.delete(e.pointerId);
+    const p = (e.type === 'pointerup' && normXY(e.clientX, e.clientY, true)) || s.last;
+    if (p.x !== s.last.x || p.y !== s.last.y) pendMove.set(s.i, p);
+    cancelAnimationFrame(moveRaf); flushMoves();
+    sendCtl({ t: 'tu', i: s.i });
+    const dt = Math.round(performance.now() - s.t);
+    if (e.type !== 'pointerup') return;
+    if (Math.hypot(e.clientX - s.sx, e.clientY - s.sy) <= TAP_PX) recordStep({ t: 'tap', x: s.p0.x, y: s.p0.y, d: Math.max(40, Math.min(dt, 1500)) }, s.t);
+    else recordStep({ t: 'swipe', x: s.p0.x, y: s.p0.y, x2: p.x, y2: p.y, d: Math.max(60, Math.min(dt, 1500)) }, s.t);
+  }
+
+  // --- macro recording ---
+  function recordStep(step, t0) {
+    if (!recording) return;
+    const t = t0 || performance.now();
+    for (const k of ['x', 'y', 'x2', 'y2']) if (k in step) step[k] = r4(step[k]);
+    step.w = recording.steps.length ? Math.round(t - recording.last) : 0;
+    recording.last = t;
+    recording.steps.push(step);
+  }
+  function stopTools() { recording = null; picking = false; fab.classList.remove('rec', 'pick'); $('#recBtn').textContent = '● Ghi thao tác'; $('#recBtn').classList.remove('rec'); }
+  $('#recBtn').addEventListener('click', () => {
+    if (recording) {
+      const steps = recording.steps; stopTools();
+      if (!steps.length) return toast('Chưa ghi được thao tác nào');
+      pendingSave = { steps, name: 'Macro ' + (((gstate && gstate.macros.length) || 0) + 1) };
+      return openSaveBox(`${steps.length} thao tác đã ghi`);
+    }
+    recording = { steps: [], last: 0 };
+    fab.classList.add('rec'); $('#recBtn').textContent = '■ Dừng ghi'; $('#recBtn').classList.add('rec');
+    closeMenu(); toast('Đang ghi: thao tác như bình thường, xong bấm nút tròn → Dừng ghi');
+  });
+  $('#autoBtn').addEventListener('click', () => {
+    stopTools(); picking = true; fab.classList.add('pick');
+    closeMenu(); toast('Chạm vào điểm cần auto chạm');
+  });
+  function finishPick(e) {
+    const p = normXY(e.clientX, e.clientY, true);
+    stopTools(); if (!p) return;
+    ripple(p, 'long');
+    pendingSave = { steps: [{ t: 'tap', x: r4(p.x), y: r4(p.y), d: 50, w: 0 }], name: 'Auto chạm' };
+    // open the panel only after this touch has ended, so its click can't land on a panel control
+    setTimeout(() => openSaveBox('Chạm 1 điểm, lặp lại sau mỗi khoảng nghỉ', true), 400);
+  }
+  function openSaveBox(info, auto) {
+    $('#mname').value = pendingSave.name;
+    $('#mloops').value = '0';
+    $('#mgap').value = '1000';
+    $('#minfo').textContent = info;
+    $('#saveBox').classList.remove('hidden');
+    openMenu();
+    setTimeout(() => $('#saveBox').scrollIntoView({ block: 'nearest' }), 50);
+  }
+  $('#mcancel').addEventListener('click', () => { pendingSave = null; $('#saveBox').classList.add('hidden'); });
+  $('#msave').addEventListener('click', () => {
+    const name = $('#mname').value.trim();
+    if (!name) return $('#mname').focus();
+    if (!pendingSave) return;
+    sendCtl({ t: 'macro_save', m: { name, steps: pendingSave.steps, loops: Number($('#mloops').value), gap: Number($('#mgap').value) } });
+    pendingSave = null; $('#saveBox').classList.add('hidden');
+    toast('Đã lưu "' + name + '" vào máy Android');
+  });
+  $('#mlist').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const name = b.closest('.mrow').dataset.name;
+    if (b.dataset.act === 'run') { sendCtl({ t: 'macro_run', name }); toast('Bắt đầu chạy "' + name + '"'); }
+    if (b.dataset.act === 'stop') sendCtl({ t: 'macro_stop' });
+    if (b.dataset.act === 'del') {
+      if (b.dataset.sure) sendCtl({ t: 'macro_del', name });
+      else { b.dataset.sure = '1'; b.textContent = 'Xoá?'; setTimeout(() => { if (b.isConnected) { delete b.dataset.sure; b.textContent = '✕'; } }, 2500); }
+    }
+  });
+  function renderGame() {
+    const g = gstate;
+    const list = (g && g.macros) || [];
+    $('#mlist').innerHTML = list.map((m) => {
+      const on = g.running === m.name;
+      return `<div class="mrow" data-name="${esc(m.name)}"><div class="mn"><b>${esc(m.name)}</b><small>${m.n} thao tác · ${m.loops ? 'lặp ' + m.loops + ' lần' : 'lặp mãi'}${on ? ' · <span style="color:var(--ok)">đang chạy</span>' : ''}</small></div>
+        <button class="kbtn ${on ? 'on' : 'primary'}" data-act="${on ? 'stop' : 'run'}">${on ? 'Dừng' : 'Chạy'}</button><button class="kbtn" data-act="del">✕</button></div>`;
+    }).join('') || '<div class="mnote" style="margin:0">Chưa có macro nào.</div>';
+    $('#optWatch').checked = !!(g && g.watch);
+    $('#optRelaunch').checked = !!(g && g.relaunch);
+    $('#watchInfo').textContent = g && g.watch ? 'Đang theo dõi: ' + g.watch : 'Ghim app đang mở trên máy Android' + (g && g.current ? ': ' + g.current : '');
+  }
+  $('#optGame').addEventListener('change', (e) => { pref.set('game', e.target.checked ? '1' : '0'); sendCtl({ t: 'tc' }); syncMenu(); placeCursor(); });
+  $('#optWatch').addEventListener('change', (e) => sendCtl({ t: 'watch', on: e.target.checked, relaunch: $('#optRelaunch').checked }));
+  $('#optRelaunch').addEventListener('change', (e) => sendCtl({ t: 'watch', on: !!(gstate && gstate.watch) || $('#optWatch').checked, relaunch: e.target.checked }));
+  $('#optKeep').addEventListener('change', (e) => { pref.set('keep', e.target.checked ? '1' : '0'); sendCtl({ t: 'keep_screen', on: e.target.checked }); });
+
+  // --- messages from the Android app ---
+  let warned = {};
+  function beep() {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.frequency.value = 880; g.gain.value = 0.15; o.connect(g); g.connect(audioCtx.destination);
+      o.start(); o.stop(audioCtx.currentTime + 0.25);
+    } catch {}
+  }
+  document.addEventListener('pointerdown', () => { try { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); else if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch {} }, { once: false, passive: true });
+  function showAlert(msg, canOpen) {
+    $('#alerttxt').textContent = msg;
+    $('#alertOpen').classList.toggle('hidden', !canOpen);
+    $('#alertbar').classList.remove('hidden');
+    haptic(200); beep();
+  }
+  $('#alertClose').addEventListener('click', () => $('#alertbar').classList.add('hidden'));
+  $('#alertOpen').addEventListener('click', () => { sendCtl({ t: 'open_game' }); $('#alertbar').classList.add('hidden'); });
+  function onDeviceMsg(m) {
+    if (m.t === 'hello') { caps = m.caps || []; if (!m.a11y) toast('Máy Android chưa bật quyền điều khiển'); sendCtl({ t: 'keep_screen', on: pref.get('keep', '1') === '1' }); syncMenu(); placeCursor(); }
+    else if (m.t === 'game') { gstate = m; renderGame(); }
+    else if (m.t === 'stat') {
+      devStat = m;
+      const hot = m.temp >= 45, low = m.batt >= 0 && m.batt <= 15 && !m.chg;
+      $('#dot').classList.toggle('hot', hot || low);
+      if (hot && !warned.hot) { warned.hot = 1; showAlert(`Máy Android đang nóng ${m.temp.toFixed(0)}°C`); }
+      if (low && !warned.low) { warned.low = 1; showAlert(`Pin máy Android còn ${m.batt}%, nên cắm sạc`); }
+      if (!hot) warned.hot = 0; if (!low) warned.low = 0;
+      $('#gstat').textContent = `Máy Android: pin ${m.batt}%${m.chg ? ' (đang sạc)' : ''} · ${m.temp.toFixed(0)}°C`;
+    }
+    else if (m.t === 'alert') {
+      if (m.k === 'game_back') { $('#alertbar').classList.add('hidden'); toast(m.msg); }
+      else showAlert(m.msg, m.k === 'game_exit');
+    }
+  }
+  function resetGame() { caps = []; gstate = null; devStat = null; slots.clear(); pendMove.clear(); stopTools(); warned = {}; $('#alertbar').classList.add('hidden'); $('#saveBox').classList.add('hidden'); }
+
+  // ---------- control panel ----------
   function syncMenu() {
     const k = qualityKey();
     document.querySelectorAll('#qseg button').forEach((b) => b.classList.toggle('on', b.dataset.q === k));
     document.querySelectorAll('#rseg button').forEach((b) => b.classList.toggle('on', b.dataset.r === rotMode()));
+    document.querySelectorAll('#tseg button').forEach((b) => b.classList.toggle('on', b.dataset.t === pref.get('touch', 'direct')));
     $('#qnote').textContent = pref.get('quality', '')
       ? (relay && k === 'hi' ? 'Đang đi qua TURN: mức Mượt tốn dung lượng nhanh.' : '')
       : 'Tự động: Cân bằng khi kết nối thẳng, Tiết kiệm khi đi qua TURN.';
+    $('#tnote').textContent = padMode()
+      ? 'Kéo 1 ngón = di chuột · chạm = bấm · chạm 2 lần rồi kéo = vuốt/kéo thả · giữ = nhấn giữ.'
+      : 'Chạm = bấm · kéo = vuốt · giữ để hiện kính lúp, nhả tay để bấm đúng chỗ.';
+    $('#optLoupe').checked = loupeOn();
+    $('#optRipple').checked = rippleOn();
+    $('#optNav').checked = pref.get('nav', '0') === '1';
+    $('#optLoupe').closest('.tg').classList.toggle('hidden', padMode());
+    $('#gameOnly').classList.toggle('hidden', !caps.includes('macro'));
+    $('#oldApp').classList.toggle('hidden', caps.length > 0 || !dispW);
+    $('#optGame').checked = pref.get('game', '1') === '1';
+    $('#optKeep').checked = pref.get('keep', '1') === '1';
+    $('#touchOpts').classList.toggle('hidden', gameOn());
+    renderGame();
   }
-  $('#more').addEventListener('click', (e) => { e.stopPropagation(); $('#sheet').classList.remove('open'); syncMenu(); $('#menu').classList.toggle('hidden'); });
-  document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#menu, #more')) $('#menu').classList.add('hidden'); });
+  function applyNav() {
+    const on = pref.get('nav', '0') === '1';
+    document.body.classList.toggle('shownav', on && inSession);
+    $('#minibar').classList.toggle('hidden', !on);
+    setTimeout(layout, 30);
+  }
+  function openMenu() { $('#sheet').classList.remove('open'); sendCtl({ t: 'game_state' }); syncMenu(); $('#menu').classList.remove('hidden'); $('#scrim').classList.remove('hidden'); }
+  function closeMenu() { $('#menu').classList.add('hidden'); $('#scrim').classList.add('hidden'); }
+  function toggleMenu() { if ($('#menu').classList.contains('hidden')) openMenu(); else closeMenu(); }
+  $('#scrim').addEventListener('pointerdown', (e) => { e.preventDefault(); closeMenu(); });
+  $('#menuClose').addEventListener('click', closeMenu);
+  $('#menu').querySelectorAll('.navrow [data-key]').forEach((b) => b.addEventListener('click', () => setTimeout(closeMenu, 120)));
   $('#qseg').addEventListener('click', (e) => {
     const b = e.target.closest('[data-q]'); if (!b) return;
     pref.set('quality', b.dataset.q); sendQuality(); toast('Chất lượng: ' + QUALITY[b.dataset.q].label);
@@ -828,22 +1312,47 @@
     const b = e.target.closest('[data-r]'); if (!b) return;
     pref.set('rotate', b.dataset.r); resetZoom(); syncMenu();
   });
-  $('#notif').addEventListener('click', () => { haptic(); sendCtl({ t: 'key', k: 'notifications' }); $('#menu').classList.add('hidden'); });
-  if (!document.documentElement.requestFullscreen) $('#fs').classList.add('hidden');
-  $('#fs').addEventListener('click', () => {
-    $('#menu').classList.add('hidden');
-    if (document.fullscreenElement) document.exitFullscreen(); else $('#session').requestFullscreen().catch(() => {});
+  $('#tseg').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-t]'); if (!b) return;
+    pref.set('touch', b.dataset.t); syncMenu(); placeCursor();
+    toast(b.dataset.t === 'pad' ? 'Chế độ chuột: kéo để di con trỏ, chạm để bấm' : 'Chế độ chạm trực tiếp');
   });
+  $('#optLoupe').addEventListener('change', (e) => pref.set('loupe', e.target.checked ? '1' : '0'));
+  $('#optRipple').addEventListener('change', (e) => pref.set('ripple', e.target.checked ? '1' : '0'));
+  $('#optNav').addEventListener('change', (e) => { pref.set('nav', e.target.checked ? '1' : '0'); applyNav(); });
+  $('#notif').addEventListener('click', () => { haptic(); sendCtl({ t: 'key', k: 'notifications' }); closeMenu(); });
+  const canFs = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+  if (!canFs) $('#fs').classList.add('hidden');
+  function enterFullscreen() {
+    const el = document.documentElement;
+    try { const r = (el.requestFullscreen || el.webkitRequestFullscreen).call(el, { navigationUI: 'hide' }); r && r.catch && r.catch(() => {}); } catch {}
+  }
+  $('#fs').addEventListener('click', () => {
+    closeMenu();
+    if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else enterFullscreen();
+  });
+  if (!window.matchMedia('(pointer: fine)').matches) $('#pcnote').classList.add('hidden');
 
   $('#bye').addEventListener('click', () => endSession(''));
   $('#copySid').addEventListener('click', () => current && copy(current.id));
-  $('#go').addEventListener('click', start);
+  $('#go').addEventListener('click', () => { if (canFs && window.matchMedia('(pointer: coarse)').matches) enterFullscreen(); start(); });
   $('#pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') start(); });
   $('#id').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#pw').focus(); });
+
 
   usageTimer = null;
   setInterval(() => { if (inSession && relay) refreshUsage(); }, 60000);
 
+  // Android app (ControllerActivity): hardware Back = Back on the remote device
+  window.rsBack = () => {
+    if (!inSession) return false;
+    if (!$('#menu').classList.contains('hidden')) closeMenu();
+    else if (sheet.classList.contains('open')) closeSheet();
+    else { haptic(); sendCtl({ t: 'key', k: 'back' }); }
+    return true;
+  };
+  if (new URLSearchParams(location.search).get('app') === 'android') { $('#hint').classList.add('hidden'); document.querySelector('.foot a').classList.add('hidden'); }
   const qid = new URLSearchParams(location.search).get('id');
   if (qid) $('#id').value = fmtId(qid);
   if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) $('#hint').classList.add('hidden');
