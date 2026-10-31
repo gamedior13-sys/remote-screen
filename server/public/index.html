@@ -477,7 +477,7 @@
     try {
       const r = await fetch('config', { cache: 'no-store' });
       const j = await r.json();
-      iceServers = j.iceServers; probeCfg = j.probe || null;
+      iceServers = j.iceServers; probeCfg = j.relays && j.relays.length ? j.relays : null;
     } catch { iceServers = [{ urls: 'stun:stun.l.google.com:19302' }]; probeCfg = null; }
     allIce = iceServers;
     applyTurn();
@@ -489,12 +489,14 @@
   let probeCfg = null, allIce = [], turnPick = null;
   const PICK_KEY = 'turnpick2', PICK_TTL = 30 * 60e3;
   const shortHost = (u) => (/^turns?:([^:?]+)/.exec(u || '') || [])[1] || '';
+  const relayOf = (url) => (probeCfg || []).find((r) => r.url === url);
   function probeOne(url, ms) {
     return new Promise((res) => {
       let pc, done = false;
       const t0 = performance.now();
       const fin = (v) => { if (done) return; done = true; try { pc && pc.close(); } catch {} res(v); };
-      try { pc = new RTCPeerConnection({ iceServers: [{ urls: url, username: probeCfg.username, credential: probeCfg.credential }], iceTransportPolicy: 'relay' }); }
+      const r = relayOf(url);
+      try { pc = new RTCPeerConnection({ iceServers: [{ urls: url, username: r.ice.username, credential: r.ice.credential }], iceTransportPolicy: 'relay' }); }
       catch { return res(null); }
       pc.createDataChannel('p');
       // a relay candidate needs 2 round trips (auth challenge + allocation)
@@ -504,8 +506,8 @@
     });
   }
   async function measureTurns(ms) {
-    if (!probeCfg || !probeCfg.urls || !probeCfg.urls.length) return [];
-    const urls = probeCfg.urls.slice();
+    if (!probeCfg) return [];
+    const urls = probeCfg.map((r) => r.url);
     const r = await Promise.all(urls.map((u) => probeOne(u, ms)));
     const out = urls.map((u, i) => ({ url: u, ms: r[i] }));
     return out.sort((a, b) => (a.ms == null) - (b.ms == null) || a.ms - b.ms);
@@ -514,7 +516,7 @@
     if (!probeCfg) return null;
     let c = null;
     try { c = JSON.parse(pref.get(PICK_KEY, 'null')); } catch {}
-    if (!force && c && Date.now() - c.at < PICK_TTL && probeCfg.urls.includes(c.url)) { turnPick = c; return c; }
+    if (!force && c && Date.now() - c.at < PICK_TTL && relayOf(c.url)) { turnPick = c; applyTurn(); return c; }
     const list = await measureTurns(2500);
     const best = list.find((x) => x.ms != null);
     turnPick = best ? { url: best.url, ms: best.ms, at: Date.now(), list } : null;
@@ -523,10 +525,9 @@
     return turnPick;
   }
   function applyTurn() {
-    if (!probeCfg || !turnPick || !probeCfg.urls.includes(turnPick.url)) { iceServers = allIce; return; }
-    const h = shortHost(turnPick.url);
-    iceServers = [{ urls: 'stun:stun.l.google.com:19302' },
-      { urls: [`turn:${h}:3478?transport=udp`, `turn:${h}:3478?transport=tcp`], username: probeCfg.username, credential: probeCfg.credential }];
+    const r = turnPick && relayOf(turnPick.url);
+    if (!r) { iceServers = allIce; return; }
+    iceServers = [{ urls: 'stun:stun.l.google.com:19302' }, r.ice];
   }
   function forgetTurn() { turnPick = null; pref.set(PICK_KEY, 'null'); iceServers = allIce; }
 
@@ -727,7 +728,7 @@
     const cd = codecId && stats.get(codecId);
     if (cd && cd.mimeType) parts.push(cd.mimeType.replace('video/', ''));
     if (relay && pathInfo) {
-      const via = pathInfo.lt === 'relay' ? shortHost(pathInfo.url) || (turnPick && shortHost(turnPick.url)) : 'phía Android';
+      const via = pathInfo.lt === 'relay' ? (turnPick && relayOf(turnPick.url) ? relayOf(turnPick.url).name + ' ' : '') + (shortHost(pathInfo.url) || (turnPick && shortHost(turnPick.url))) : 'phía Android';
       parts.push('qua ' + (via || 'TURN') + (pathInfo.proto ? ' ' + String(pathInfo.proto).toUpperCase() : ''));
     }
     if (devStat && devStat.batt >= 0) parts.push('pin ' + devStat.batt + '%');
@@ -1367,7 +1368,7 @@
       turnPick = { url: best.url, ms: best.ms, at: Date.now(), list };
       pref.set(PICK_KEY, JSON.stringify(turnPick)); applyTurn();
       lines.push('Máy chủ TURN (ping ước tính):');
-      ok.slice(0, 6).forEach((x, i) => lines.push(`${i ? '   ' : '✓ '}${shortHost(x.url)}: ~${x.ms} ms`));
+      ok.slice(0, 6).forEach((x, i) => lines.push(`${i ? '   ' : '✓ '}${(relayOf(x.url) || {}).name || ''} ${shortHost(x.url)}: ~${x.ms} ms`));
       lines.push(`Đã chọn ${shortHost(best.url)}. Áp dụng khi kết nối lại.`);
     } else if (probeCfg) lines.push('Không đo được máy chủ TURN nào (mạng chặn UDP?).');
     if (relay || nat !== 'cone') {
