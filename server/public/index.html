@@ -74,6 +74,18 @@
   .dev .meta { flex: 1; min-width: 0; text-align: left; padding: 0; }
   .dev .nm { font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
   .dev .tm { color: var(--muted); font-size: 12.5px; }
+  .dev .nm, .dev .tm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dev .iconbtn { width: 34px; }
+  @media (max-width: 430px) { .dev .ic { display: none; } .dev { gap: 6px; } }
+  .dev .nm small { font-weight: 500; color: var(--muted); letter-spacing: .02em; margin-left: 6px; font-size: 12.5px; }
+  .dev.pinned { border-color: rgba(79,140,255,.45); }
+  .iconbtn.on { color: var(--warn); }
+  .dev .rename { flex: 1; min-width: 0; height: 40px; font-size: 15px; padding: 0 12px; }
+  .updbar { display: flex; align-items: center; gap: 10px; margin: -10px 0 18px; padding: 10px 10px 10px 14px; border-radius: 14px;
+    background: rgba(79,140,255,.12); border: 1px solid rgba(79,140,255,.4); font-size: 13.5px; }
+  .updbar span { flex: 1; }
+  .updbar button { height: 36px; padding: 0 14px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 600; }
+  .brand .iconbtn { margin-left: auto; }
   .iconbtn { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; color: var(--muted); flex: none; }
   .iconbtn:active { background: var(--line); }
   .empty { color: var(--dim); font-size: 13.5px; padding: 6px 4px; }
@@ -233,7 +245,9 @@
     <div class="brand">
       <div class="logo"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg></div>
       <div><h1>Remote Screen</h1><p>Điều khiển máy Android từ xa</p></div>
+      <button class="iconbtn" id="syncBtn" aria-label="Đồng bộ bản mới" title="Đồng bộ bản mới"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/></svg></button>
     </div>
+    <div class="updbar hidden" id="updbar"><span id="updtxt">Có bản mới</span><button id="updgo">Cập nhật</button></div>
 
     <div class="card">
       <h2>Kết nối thiết bị</h2>
@@ -347,6 +361,10 @@
     <button class="kbtn" id="netTest" style="width:100%;height:44px">Kiểm tra mạng & chọn máy chủ nhanh nhất</button>
     <div class="mnote" id="netOut" style="white-space:pre-line"></div>
 
+    <h4>Phiên bản & cập nhật</h4>
+    <div class="mnote" id="verInfo" style="margin-top:0"></div>
+    <div class="gbtns" style="margin-top:8px"><button class="kbtn" id="updWeb">Tải lại trang</button><button class="kbtn" id="updApp">Cập nhật app Android</button></div>
+
     <h4>Phóng to</h4>
     <div class="row"><span class="mnote" style="margin:0" id="zlabel">1.0× · dùng 2 ngón để phóng to/kéo hình</span><button class="kbtn" id="zreset" style="height:38px">Đặt lại</button></div>
 
@@ -394,6 +412,7 @@
     hi: { fps: 60, long: 960, br: 6000000, label: 'Mượt' },
   };
   const RECONNECT_MS = 120000;
+  let reconnectLimit = RECONNECT_MS;
 
   let ws, pc, dc, statsTimer, usageTimer, iceServers = [], current = null;
   let inSession = false, reconnecting = false, reconnectSince = 0, retryTimer = null, discTimer = null;
@@ -437,10 +456,13 @@
     const list = store.get();
     const box = $('#recent');
     if (!list.length) { box.innerHTML = '<div class="empty">Chưa có thiết bị nào. Kết nối lần đầu để lưu vào đây.</div>'; return; }
-    box.innerHTML = list.map((d) => `
-      <div class="dev" data-id="${esc(d.id)}">
+    const sorted = list.slice().sort((a, b) => (b.pin ? 1 : 0) - (a.pin ? 1 : 0) || b.last - a.last);
+    box.innerHTML = sorted.map((d) => `
+      <div class="dev${d.pin ? ' pinned' : ''}" data-id="${esc(d.id)}">
         <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg></div>
-        <button class="meta" data-act="open"><div class="nm">${esc(fmtId(d.id))}</div><div class="tm">${esc(ago(d.last))}${d.pw ? ' · đã lưu mật khẩu' : ''}</div></button>
+        <button class="meta" data-act="open"><div class="nm">${esc(d.name || fmtId(d.id))}</div><div class="tm">${d.name ? esc(fmtId(d.id)) + ' · ' : ''}${esc(ago(d.last))}${d.pw && !d.name ? ' · đã lưu mật khẩu' : ''}</div></button>
+        <button class="iconbtn${d.pin ? ' on' : ''}" data-act="pin" aria-label="Ghim"><svg width="18" height="18" viewBox="0 0 24 24" fill="${d.pin ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 2 3 6.5 7 .8-5.2 4.8 1.5 7L12 17.6 5.7 21l1.5-7L2 9.3l7-.8z"/></svg></button>
+        <button class="iconbtn" data-act="name" aria-label="Đặt tên"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
         <button class="iconbtn" data-act="copy" aria-label="Copy ID"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
         <button class="iconbtn" data-act="del" aria-label="Xoá"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
       </div>`).join('');
@@ -451,14 +473,29 @@
     const d = store.get().find((x) => x.id === id);
     if (b.dataset.act === 'copy') return copy(id);
     if (b.dataset.act === 'del') { store.set(store.get().filter((x) => x.id !== id)); return renderRecent(); }
+    if (b.dataset.act === 'pin') { store.set(store.get().map((x) => (x.id === id ? { ...x, pin: !x.pin } : x))); return renderRecent(); }
+    if (b.dataset.act === 'name') {
+      const row = b.closest('.dev'); const meta = row.querySelector('.meta');
+      const inp = document.createElement('input');
+      inp.className = 'inp rename'; inp.maxLength = 30; inp.placeholder = 'Tên / ghi chú (vd: Giả lập acc 1)'; inp.value = (d && d.name) || '';
+      meta.replaceWith(inp); inp.focus();
+      const save = () => { const v = inp.value.trim(); store.set(store.get().map((x) => (x.id === id ? { ...x, name: v } : x))); renderRecent(); };
+      inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') inp.blur(); if (ev.key === 'Escape') { inp.value = (d && d.name) || ''; inp.blur(); } });
+      inp.addEventListener('blur', save);
+      return;
+    }
     $('#id').value = fmtId(id); $('#pw').value = (d && d.pw) || '';
     if (d && d.pw) start(); else $('#pw').focus();
   });
   function remember(id, pw) {
     const keep = $('#remember').checked;
-    const list = store.get().filter((x) => x.id !== id);
-    list.unshift({ id, pw: keep ? pw : '', last: Date.now() });
-    store.set(list.slice(0, 12));
+    const all = store.get();
+    const old = all.find((x) => x.id === id) || {};
+    const list = all.filter((x) => x.id !== id);
+    list.unshift({ ...old, id, pw: keep ? pw : '', last: Date.now() });
+    // keep every pinned device, plus the most recent others
+    const pinned = list.filter((x) => x.pin), rest = list.filter((x) => !x.pin);
+    store.set([...pinned, ...rest.slice(0, Math.max(0, 15 - pinned.length))]);
   }
 
   // ---------- connect ----------
@@ -572,7 +609,7 @@
     }
     if (m.type === 'connected') {
       if (!inSession) { remember(current.id, current.password); openSession(); }
-      reconnecting = false; reconnectSince = 0;
+      reconnecting = false; reconnectSince = 0; reconnectLimit = RECONNECT_MS;
       showOverlay('Đang thiết lập kết nối…');
       createPeer();
       return;
@@ -602,7 +639,8 @@
     inSession = true;
     $('#home').classList.add('hidden');
     $('#session').classList.remove('hidden');
-    $('#sid').textContent = fmtId(current.id);
+    const named = store.get().find((x) => x.id === current.id);
+    $('#sid').textContent = named && named.name ? named.name + ' · ' + fmtId(current.id) : fmtId(current.id);
     $('#dot').classList.remove('ok');
     $('#stext').textContent = 'Đang kết nối…'; $('#quota').textContent = ''; $('#qlabel').textContent = '';
     $('#badge').className = 'badge'; $('#badge').textContent = '…';
@@ -628,7 +666,7 @@
   function scheduleReconnect(text) {
     if (!inSession) return;
     if (!reconnectSince) reconnectSince = Date.now();
-    if (Date.now() - reconnectSince > RECONNECT_MS) return endSession('Không kết nối lại được. Kiểm tra máy Android còn đang chia sẻ không.');
+    if (Date.now() - reconnectSince > reconnectLimit) return endSession('Không kết nối lại được. Kiểm tra máy Android còn đang chia sẻ không.');
     reconnecting = true;
     closePeer();
     $('#dot').classList.remove('ok');
@@ -1180,7 +1218,8 @@
 
   // ---------- game mode: realtime multi-touch, macros, game watch, device stats ----------
   let caps = [], gstate = null, devStat = null, recording = null, picking = false, pendingSave = null, audioCtx = null;
-  const gameOn = () => caps.includes('mt') && pref.get('game', '1') === '1';
+  // Off by default: continued multi-finger gestures are unreliable on Android 9 (LDPlayer 9).
+  const gameOn = () => caps.includes('mt') && pref.get('game2', '0') === '1';
   const slots = new Map();               // pointerId -> finger slot on the Android side
   const pendMove = new Map(); let moveRaf = 0;
   const r4 = (v) => Math.round(v * 10000) / 10000;
@@ -1191,22 +1230,39 @@
     sendCtl({ t: 'tm', p: [...pendMove.entries()].map(([i, p]) => [i, r4(p.x), r4(p.y)]) });
     pendMove.clear();
   }
+  // A finger only becomes a live (streamed) touch once it moves, is held, or another finger joins.
+  // Quick taps are sent as one reliable tap — never as a stream.
+  function startSlot(s) {
+    if (s.started) return;
+    s.started = true; clearTimeout(s.timer);
+    sendCtl({ t: 'td', i: s.i, x: r4(s.p0.x), y: r4(s.p0.y) });
+    if (s.last !== s.p0) { pendMove.set(s.i, s.last); if (!moveRaf) moveRaf = requestAnimationFrame(flushMoves); }
+  }
   function gDown(e) {
-    const p = normXY(e.clientX, e.clientY, true); if (!p) return;
+    const p = normXY(e.clientX, e.clientY, false); if (!p) return;      // ignore touches on the black bars
     const i = freeSlot(); if (i < 0) return;
-    slots.set(e.pointerId, { i, sx: e.clientX, sy: e.clientY, t: performance.now(), p0: p, last: p });
-    sendCtl({ t: 'td', i, x: r4(p.x), y: r4(p.y) });
+    const s = { i, sx: e.clientX, sy: e.clientY, t: performance.now(), p0: p, last: p, started: false };
+    slots.set(e.pointerId, s);
+    if (slots.size > 1) slots.forEach(startSlot);                            // multi-touch: everyone live
+    else s.timer = setTimeout(() => startSlot(s), 180);                     // held finger: go live
     ripple(p, 'dot');
   }
   function gMove(e) {
     const s = slots.get(e.pointerId); if (!s) return;
     const p = normXY(e.clientX, e.clientY, true); if (!p) return;
-    s.last = p; pendMove.set(s.i, p);
+    s.last = p;
+    if (!s.started) { if (Math.hypot(e.clientX - s.sx, e.clientY - s.sy) > TAP_PX) startSlot(s); return; }
+    pendMove.set(s.i, p);
     if (!moveRaf) moveRaf = requestAnimationFrame(flushMoves);
   }
   function gUp(e) {
     const s = slots.get(e.pointerId); if (!s) return;
     slots.delete(e.pointerId);
+    if (!s.started) {
+      clearTimeout(s.timer);
+      if (e.type === 'pointerup') tapAt(s.p0, Math.round(performance.now() - s.t));
+      return;
+    }
     const p = (e.type === 'pointerup' && normXY(e.clientX, e.clientY, true)) || s.last;
     if (p.x !== s.last.x || p.y !== s.last.y) pendMove.set(s.i, p);
     cancelAnimationFrame(moveRaf); flushMoves();
@@ -1290,7 +1346,7 @@
     $('#optRelaunch').checked = !!(g && g.relaunch);
     $('#watchInfo').textContent = g && g.watch ? 'Đang theo dõi: ' + g.watch : 'Ghim app đang mở trên máy Android' + (g && g.current ? ': ' + g.current : '');
   }
-  $('#optGame').addEventListener('change', (e) => { pref.set('game', e.target.checked ? '1' : '0'); sendCtl({ t: 'tc' }); syncMenu(); placeCursor(); });
+  $('#optGame').addEventListener('change', (e) => { pref.set('game2', e.target.checked ? '1' : '0'); sendCtl({ t: 'tc' }); syncMenu(); placeCursor(); });
   $('#optWatch').addEventListener('change', (e) => sendCtl({ t: 'watch', on: e.target.checked, relaunch: $('#optRelaunch').checked }));
   $('#optRelaunch').addEventListener('change', (e) => sendCtl({ t: 'watch', on: !!(gstate && gstate.watch) || $('#optWatch').checked, relaunch: e.target.checked }));
   $('#optKeep').addEventListener('change', (e) => { pref.set('keep', e.target.checked ? '1' : '0'); sendCtl({ t: 'keep_screen', on: e.target.checked }); });
@@ -1315,7 +1371,8 @@
   $('#alertClose').addEventListener('click', () => $('#alertbar').classList.add('hidden'));
   $('#alertOpen').addEventListener('click', () => { sendCtl({ t: 'open_game' }); $('#alertbar').classList.add('hidden'); });
   function onDeviceMsg(m) {
-    if (m.t === 'hello') { caps = m.caps || []; if (!m.a11y) toast('Máy Android chưa bật quyền điều khiển'); sendCtl({ t: 'keep_screen', on: pref.get('keep', '1') === '1' }); syncMenu(); placeCursor(); }
+    if (m.t === 'update') return onUpdateMsg(String(m.st || ''));
+    if (m.t === 'hello') { caps = m.caps || []; devVer = m.ver ? { ver: m.ver, vname: m.vname, sdk: m.sdk } : null; showUpdates(); if (!m.a11y) toast('Máy Android chưa bật quyền điều khiển'); sendCtl({ t: 'keep_screen', on: pref.get('keep', '1') === '1' }); syncMenu(); placeCursor(); }
     else if (m.t === 'game') { gstate = m; renderGame(); }
     else if (m.t === 'stat') {
       devStat = m;
@@ -1331,7 +1388,66 @@
       else showAlert(m.msg, m.k === 'game_exit');
     }
   }
-  function resetGame() { caps = []; gstate = null; devStat = null; slots.clear(); pendMove.clear(); stopTools(); warned = {}; $('#alertbar').classList.add('hidden'); $('#saveBox').classList.add('hidden'); }
+  // ---------- versions: web page + Android app, one-tap update ----------
+  let verLoaded = null, verNow = null, devVer = null, updating = false;
+  async function fetchVersion() {
+    try { verNow = await (await fetch('version?t=' + Date.now(), { cache: 'no-store' })).json(); } catch { return null; }
+    if (!verLoaded) verLoaded = verNow;
+    showUpdates();
+    return verNow;
+  }
+  const apkLatest = () => (verNow && verNow.apk && verNow.apk.versionCode) || 0;
+  function showUpdates() {
+    const webNew = verNow && verLoaded && verNow.web !== verLoaded.web;
+    const appNew = devVer && apkLatest() > devVer.ver;
+    $('#updbar').classList.toggle('hidden', !webNew);
+    $('#updtxt').textContent = 'Có bản web mới: bấm để cập nhật';
+    const parts = [];
+    parts.push('Web: ' + (verLoaded ? verLoaded.web : '?') + (webNew ? ' → ' + verNow.web + ' (có bản mới)' : ''));
+    if (devVer) parts.push('App Android: ' + (devVer.vname || devVer.ver) + (appNew ? ' → ' + verNow.apk.versionName + ' (có bản mới)' : ' (mới nhất)'));
+    else if (inSession) parts.push('App Android: bản cũ, chưa hỗ trợ cập nhật từ xa');
+    if ($('#verInfo')) $('#verInfo').textContent = parts.join(' · ');
+    $('#updApp').disabled = !caps.includes('update');
+    $('#updApp').textContent = appNew ? 'Cập nhật app Android' : 'Cài lại app Android';
+    $('#updApp').classList.toggle('primary', !!appNew);
+    $('#updWeb').classList.toggle('primary', !!webNew);
+    if (inSession && webNew && !showUpdates.told) { showUpdates.told = 1; toast('Có bản web mới: mở bảng điều khiển → Tải lại trang'); }
+  }
+  function reloadWeb() {
+    const u = new URL(location.href);
+    u.searchParams.set('v', Date.now());
+    if (inSession && current) u.searchParams.set('id', current.id); else u.searchParams.delete('id');
+    location.replace(u.toString());
+  }
+  $('#updgo').addEventListener('click', reloadWeb);
+  $('#updWeb').addEventListener('click', reloadWeb);
+  $('#syncBtn').addEventListener('click', async () => {
+    const b = $('#syncBtn'); b.disabled = true;
+    const v = await fetchVersion();
+    if (v && verLoaded && v.web !== verLoaded.web) return reloadWeb();
+    b.disabled = false;
+    toast(v ? 'Đã là bản mới nhất' + (v.apk && v.apk.versionName ? ' · app Android mới nhất: ' + v.apk.versionName : '') : 'Không kiểm tra được, thử lại');
+  });
+  $('#updApp').addEventListener('click', () => {
+    if (!caps.includes('update')) return toast('App Android này quá cũ: cài bản mới bằng tay một lần');
+    const force = !(devVer && apkLatest() > devVer.ver);
+    sendCtl({ t: 'update_app', force }); toast('Đang gửi lệnh cập nhật tới máy Android…'); closeMenu();
+  });
+  function onUpdateMsg(st) {
+    const map = { checking: 'Máy Android đang kiểm tra bản mới…', latest: 'App Android đã là bản mới nhất', busy: 'Đang cập nhật rồi',
+      downloading: 'Máy Android đang tải bản mới…',
+      need_permission: 'Cần cho phép cài app: trên màn hình máy Android hãy bật "Cho phép từ nguồn này", rồi bấm Cập nhật lại',
+      installing: 'Đang cài bản mới: app sẽ tự mở lại và chia sẻ tiếp (khoảng 1 phút)…' };
+    const msg = map[st] || (st.startsWith('error:') ? 'Cập nhật lỗi: ' + st.slice(6) : st);
+    if (st === 'installing') { updating = true; reconnectLimit = 5 * 60e3; showOverlay(msg, true); }
+    else toast(msg);
+    if (st === 'need_permission') showAlert(msg, false);
+  }
+  setInterval(fetchVersion, 5 * 60e3);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') fetchVersion(); });
+  fetchVersion();
+
+  function resetGame() { devVer = null; caps = []; gstate = null; devStat = null; slots.clear(); pendMove.clear(); stopTools(); warned = {}; $('#alertbar').classList.add('hidden'); $('#saveBox').classList.add('hidden'); }
 
   // ---------- network test ----------
   function natCheck() {
@@ -1374,9 +1490,8 @@
       lines.push(`Đã chọn ${shortHost(best.url)}. Áp dụng khi kết nối lại.`);
     } else if (probeCfg) lines.push('Không đo được máy chủ TURN nào (mạng chặn UDP?).');
     if (relay || nat !== 'cone') {
-      lines.push('', 'Để nối thẳng P2P (nhanh nhất):',
-        '• Giả lập LDPlayer: Cài đặt → Mạng → bật "Cầu nối mạng" (Network bridging), cài driver, chọn card mạng đang dùng, khởi động lại giả lập.',
-        '• Modem nhà (cả 2 nơi): bật UPnP; tránh dùng 4G cho máy chạy game.');
+      lines.push('', 'Không nối thẳng được thì app tự đi qua máy trung chuyển nhanh nhất ở trên (Cloudflare/Metered gần Việt Nam).',
+        'Muốn nối thẳng: modem nơi đặt máy Android cần NAT thường (bật UPnP/DMZ), giả lập bật "Cầu nối mạng".');
     }
     out.textContent = lines.join('\n');
     btn.disabled = false;
@@ -1402,7 +1517,7 @@
     $('#optLoupe').closest('.tg').classList.toggle('hidden', padMode());
     $('#gameOnly').classList.toggle('hidden', !caps.includes('macro'));
     $('#oldApp').classList.toggle('hidden', caps.length > 0 || !dispW);
-    $('#optGame').checked = pref.get('game', '1') === '1';
+    $('#optGame').checked = pref.get('game2', '0') === '1';
     $('#optKeep').checked = pref.get('keep', '1') === '1';
     $('#touchOpts').classList.toggle('hidden', gameOn());
     renderGame();
@@ -1468,8 +1583,14 @@
     return true;
   };
   if (new URLSearchParams(location.search).get('app') === 'android') { $('#hint').classList.add('hidden'); document.querySelector('.foot a').classList.add('hidden'); }
-  const qid = new URLSearchParams(location.search).get('id');
-  if (qid) $('#id').value = fmtId(qid);
+  const qs = new URLSearchParams(location.search);
+  const qid = qs.get('id');
+  if (qid) {
+    $('#id').value = fmtId(qid);
+    // after "Tải lại trang" during a session: reconnect straight away with the saved password
+    const saved = store.get().find((x) => x.id === rawId(qid));
+    if (qs.get('v') && saved && saved.pw) { $('#pw').value = saved.pw; setTimeout(start, 300); }
+  }
   if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) $('#hint').classList.add('hidden');
   renderRecent();
 })();
