@@ -42,10 +42,8 @@ const turnHost = (u) => { const m = /^turns?:([^:?]+)/i.exec(u); return m ? m[1]
 const baseDomain = (h) => h.split('.').slice(-2).join('.');
 const EXTRA_DOMAIN = EXTRA_TURN ? baseDomain(turnHost(EXTRA_TURN_URLS[0])) : '';
 // Other relay servers of the same provider that the web client may test for the lowest ping.
-// (A free account may not be allowed on all of them: the client simply skips those that fail.)
-const PROBE_HOSTS = EXTRA_DOMAIN === 'expressturn.com'
-  ? Array.from({ length: 16 }, (_, i) => `relay${i + 1}.expressturn.com`).concat(['free.expressturn.com'])
-  : [];
+// (Tested: a free ExpressTURN account only works on free.expressturn.com, so nothing extra to probe.)
+const PROBE_HOSTS = [];
 const HOSTED_TURN = EXTRA_TURN || Boolean((METERED_APP && METERED_API_KEY) || (CF_TURN_KEY_ID && CF_TURN_TOKEN));
 // Built-in TURN only makes sense when running on a PC in the LAN (not on Render & co).
 const LOCAL_TURN = !HOSTED_TURN && !process.env.RENDER && process.env.LOCAL_TURN !== '0';
@@ -123,24 +121,49 @@ const FAIL_WINDOW_MS = 10 * 60e3;  // ... per IP within this window
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', true);
-app.get('/config', async (req, res) => {
-  const out = { iceServers: await iceServersFor(req) };
+// Every TURN relay the web client may measure, one entry per host, from all configured providers.
+// The client keeps the one with the lowest ping and the device is given the same one.
+async function relayCandidates() {
+  const out = [];
   if (EXTRA_TURN) {
     const hosts = [...new Set([...EXTRA_TURN_URLS.map(turnHost), ...PROBE_HOSTS])];
-    out.probe = { urls: hosts.map((h) => `turn:${h}:3478?transport=udp`), username: EXTRA_TURN_USER, credential: EXTRA_TURN_PASS };
+    for (const h of hosts) {
+      out.push({ name: EXTRA_TURN_NAME, url: `turn:${h}:3478?transport=udp`,
+        ice: { urls: [`turn:${h}:3478?transport=udp`, `turn:${h}:3478?transport=tcp`], username: EXTRA_TURN_USER, credential: EXTRA_TURN_PASS } });
+    }
   }
+  // Metered relays are geo-routed (Singapore for Vietnam): much lower ping, but a small free quota.
+  if (METERED_APP && METERED_API_KEY) {
+    const byHost = new Map();
+    for (const e of await hostedTurn()) {
+      if (!e || !e.username) continue;
+      for (const u of [].concat(e.urls || [])) {
+        const h = turnHost(u); if (!h) continue;
+        const g = byHost.get(h) || { urls: [], username: e.username, credential: e.credential };
+        g.urls.push(u); byHost.set(h, g);
+      }
+    }
+    for (const [h, g] of byHost) {
+      g.urls.sort((a, b) => Number(isUdpUrl(b)) - Number(isUdpUrl(a)));
+      const udp = g.urls.find(isUdpUrl);
+      if (udp) out.push({ name: 'Metered', url: udp, ice: g });
+    }
+  }
+  return out;
+}
+
+app.get('/config', async (req, res) => {
+  const out = { iceServers: await iceServersFor(req) };
+  const relays = await relayCandidates();
+  if (relays.length) out.relays = relays;
   res.json(out);
 });
 
 // The controller measured the TURN relay with the lowest ping: give the device the same one.
-function pickedIce(pick) {
-  if (!EXTRA_TURN || typeof pick !== 'string') return null;
-  const h = turnHost(pick);
-  if (!h || baseDomain(h) !== EXTRA_DOMAIN || !/^[a-z0-9.-]+$/.test(h)) return null;
-  return [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: [`turn:${h}:3478?transport=udp`, `turn:${h}:3478?transport=tcp`], username: EXTRA_TURN_USER, credential: EXTRA_TURN_PASS },
-  ];
+async function pickedIce(pick) {
+  if (typeof pick !== 'string') return null;
+  const r = (await relayCandidates()).find((x) => x.url === pick);
+  return r ? [{ urls: 'stun:stun.l.google.com:19302' }, r.ice] : null;
 }
 app.get('/healthz', (_req, res) => res.send('ok'));
 
@@ -260,8 +283,8 @@ wss.on('connection', (ws, req) => {
       ws.deviceId = String(m.id).replace(/\s+/g, '');
       dev.controller = ws;
       send(ws, { type: 'connected' });
-      const ice = pickedIce(m.turn);
-      return send(dev.ws, ice ? { type: 'peer-joined', ice } : { type: 'peer-joined' });
+      return pickedIce(m.turn).catch(() => null)
+        .then((ice) => send(dev.ws, ice ? { type: 'peer-joined', ice } : { type: 'peer-joined' }));
     }
 
     // ---- relay SDP / ICE ----
