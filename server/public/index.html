@@ -343,6 +343,10 @@
     <label class="tg"><span>Hiện điểm chạm<small>Vòng tròn đánh dấu chỗ vừa bấm</small></span><span class="sw"><input type="checkbox" id="optRipple"><span></span></span></label>
     <label class="tg"><span>Luôn hiện 3 nút điều hướng<small>Thanh Back · Home · Đa nhiệm nhỏ ở cạnh màn hình</small></span><span class="sw"><input type="checkbox" id="optNav"><span></span></span></label>
 
+    <h4>Mạng & độ trễ</h4>
+    <button class="kbtn" id="netTest" style="width:100%;height:44px">Kiểm tra mạng & chọn máy chủ nhanh nhất</button>
+    <div class="mnote" id="netOut" style="white-space:pre-line"></div>
+
     <h4>Phóng to</h4>
     <div class="row"><span class="mnote" style="margin:0" id="zlabel">1.0× · dùng 2 ngón để phóng to/kéo hình</span><button class="kbtn" id="zreset" style="height:38px">Đặt lại</button></div>
 
@@ -472,9 +476,59 @@
   async function loadConfig() {
     try {
       const r = await fetch('config', { cache: 'no-store' });
-      iceServers = (await r.json()).iceServers;
-    } catch { iceServers = [{ urls: 'stun:stun.l.google.com:19302' }]; }
+      const j = await r.json();
+      iceServers = j.iceServers; probeCfg = j.probe || null;
+    } catch { iceServers = [{ urls: 'stun:stun.l.google.com:19302' }]; probeCfg = null; }
+    allIce = iceServers;
+    applyTurn();
   }
+
+  // ---------- TURN relay with the lowest ping ----------
+  // The free provider has relay servers on several continents. Measure them from here and use only the
+  // fastest one (the Android side gets the same one through the server), instead of a random far one.
+  let probeCfg = null, allIce = [], turnPick = null;
+  const PICK_KEY = 'turnpick2', PICK_TTL = 30 * 60e3;
+  const shortHost = (u) => (/^turns?:([^:?]+)/.exec(u || '') || [])[1] || '';
+  function probeOne(url, ms) {
+    return new Promise((res) => {
+      let pc, done = false;
+      const t0 = performance.now();
+      const fin = (v) => { if (done) return; done = true; try { pc && pc.close(); } catch {} res(v); };
+      try { pc = new RTCPeerConnection({ iceServers: [{ urls: url, username: probeCfg.username, credential: probeCfg.credential }], iceTransportPolicy: 'relay' }); }
+      catch { return res(null); }
+      pc.createDataChannel('p');
+      // a relay candidate needs 2 round trips (auth challenge + allocation)
+      pc.onicecandidate = (e) => { if (e.candidate && / typ relay /.test(e.candidate.candidate)) fin(Math.max(1, Math.round((performance.now() - t0) / 2))); };
+      pc.createOffer().then((o) => pc.setLocalDescription(o)).catch(() => fin(null));
+      setTimeout(() => fin(null), ms || 3000);
+    });
+  }
+  async function measureTurns(ms) {
+    if (!probeCfg || !probeCfg.urls || !probeCfg.urls.length) return [];
+    const urls = probeCfg.urls.slice();
+    const r = await Promise.all(urls.map((u) => probeOne(u, ms)));
+    const out = urls.map((u, i) => ({ url: u, ms: r[i] }));
+    return out.sort((a, b) => (a.ms == null) - (b.ms == null) || a.ms - b.ms);
+  }
+  async function pickTurn(force) {
+    if (!probeCfg) return null;
+    let c = null;
+    try { c = JSON.parse(pref.get(PICK_KEY, 'null')); } catch {}
+    if (!force && c && Date.now() - c.at < PICK_TTL && probeCfg.urls.includes(c.url)) { turnPick = c; return c; }
+    const list = await measureTurns(2500);
+    const best = list.find((x) => x.ms != null);
+    turnPick = best ? { url: best.url, ms: best.ms, at: Date.now(), list } : null;
+    if (turnPick) pref.set(PICK_KEY, JSON.stringify(turnPick)); else pref.set(PICK_KEY, 'null');
+    applyTurn();
+    return turnPick;
+  }
+  function applyTurn() {
+    if (!probeCfg || !turnPick || !probeCfg.urls.includes(turnPick.url)) { iceServers = allIce; return; }
+    const h = shortHost(turnPick.url);
+    iceServers = [{ urls: 'stun:stun.l.google.com:19302' },
+      { urls: [`turn:${h}:3478?transport=udp`, `turn:${h}:3478?transport=tcp`], username: probeCfg.username, credential: probeCfg.credential }];
+  }
+  function forgetTurn() { turnPick = null; pref.set(PICK_KEY, 'null'); iceServers = allIce; }
 
   async function start() {
     if ($('#go').disabled) return;
@@ -486,6 +540,7 @@
     busy(true, 'Đang kết nối…');
     const slow = setTimeout(() => setErr('Đang đánh thức máy chủ, lần đầu có thể mất khoảng 30–50 giây…', true), 3500);
     await loadConfig();
+    if (probeCfg) { setErr('Đang chọn máy chủ trung chuyển gần nhất…', true); await pickTurn(false); }
     clearTimeout(slow);
     setErr('');
     current = { id, password };
@@ -496,7 +551,7 @@
     try { ws && (ws.onclose = null, ws.close()); } catch {}
     ws = new WebSocket(wsUrl());
     const me = ws;
-    ws.onopen = () => me.send(JSON.stringify({ type: 'connect', id: current.id, password: current.password }));
+    ws.onopen = () => me.send(JSON.stringify({ type: 'connect', id: current.id, password: current.password, turn: turnPick ? turnPick.url : undefined }));
     ws.onmessage = (e) => { if (ws === me) onSignaling(JSON.parse(e.data)); };
     ws.onclose = () => {
       if (ws !== me) return;
@@ -619,7 +674,7 @@
         $('#dot').classList.remove('ok'); showOverlay('Mạng chập chờn, đang thử lại…', true);
         clearTimeout(discTimer); discTimer = setTimeout(() => { if (pc === me && pc.connectionState !== 'connected') scheduleReconnect(); }, 6000);
       }
-      if (s === 'failed') scheduleReconnect('Không truyền được hình ảnh, đang thử lại…');
+      if (s === 'failed') { if (turnPick) forgetTurn(); scheduleReconnect('Không truyền được hình ảnh, đang thử lại…'); }
     };
     statsTimer = setInterval(updateStats, 1000);
   }
@@ -636,7 +691,7 @@
   }
 
   // ---------- stats & TURN quota ----------
-  let last = { bytes: 0, t: 0 };
+  let last = { bytes: 0, t: 0 }, pathInfo = null;
   async function updateStats() {
     if (!pc) return;
     const stats = await pc.getStats();
@@ -650,6 +705,8 @@
         if (s.currentRoundTripTime != null) rtt = Math.round(s.currentRoundTripTime * 1000);
         const lc = stats.get(s.localCandidateId), rc = stats.get(s.remoteCandidateId);
         isRelay = !!((lc && lc.candidateType === 'relay') || (rc && rc.candidateType === 'relay'));
+        pathInfo = { lt: lc && lc.candidateType, rt: rc && rc.candidateType, proto: lc && (lc.relayProtocol || lc.protocol),
+          url: lc && lc.url, rtt: s.currentRoundTripTime != null ? Math.round(s.currentRoundTripTime * 1000) : null };
       }
     });
     const now = performance.now();
@@ -669,6 +726,10 @@
     if (fps != null) parts.push(Math.round(fps) + ' fps');
     const cd = codecId && stats.get(codecId);
     if (cd && cd.mimeType) parts.push(cd.mimeType.replace('video/', ''));
+    if (relay && pathInfo) {
+      const via = pathInfo.lt === 'relay' ? shortHost(pathInfo.url) || (turnPick && shortHost(turnPick.url)) : 'phía Android';
+      parts.push('qua ' + (via || 'TURN') + (pathInfo.proto ? ' ' + String(pathInfo.proto).toUpperCase() : ''));
+    }
     if (devStat && devStat.batt >= 0) parts.push('pin ' + devStat.batt + '%');
     if (bytes != null) parts.push(lastKbps >= 1000 ? (lastKbps / 1000).toFixed(1) + ' Mbps' : lastKbps + ' kbps');
     $('#stext').textContent = parts.join(' · ') || 'Đang kết nối…';
@@ -1268,6 +1329,57 @@
     }
   }
   function resetGame() { caps = []; gstate = null; devStat = null; slots.clear(); pendMove.clear(); stopTools(); warned = {}; $('#alertbar').classList.add('hidden'); $('#saveBox').classList.add('hidden'); }
+
+  // ---------- network test ----------
+  function natCheck() {
+    // Ask two different STUN servers for our public address: different ports = symmetric NAT (no direct P2P).
+    return new Promise((res) => {
+      let pc; const seen = [];
+      try { pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }] }); } catch { return res('?'); }
+      pc.createDataChannel('n');
+      const fin = () => { try { pc.close(); } catch {} const byBase = {};
+        seen.forEach((c) => { (byBase[c.base] = byBase[c.base] || new Set()).add(c.port); });
+        const sets = Object.values(byBase); if (!sets.length) return res('blocked');
+        res(sets.some((x) => x.size > 1) ? 'symmetric' : 'cone'); };
+      pc.onicecandidate = (e) => {
+        if (!e.candidate) return fin();
+        const m = / (\d+) typ srflx raddr \S+ rport (\d+)/.exec(e.candidate.candidate);
+        if (m) seen.push({ port: m[1], base: m[2] });
+      };
+      pc.createOffer().then((o) => pc.setLocalDescription(o)).catch(() => res('?'));
+      setTimeout(fin, 4000);
+    });
+  }
+  $('#netTest').addEventListener('click', async () => {
+    const out = $('#netOut'), btn = $('#netTest');
+    btn.disabled = true; out.textContent = 'Đang đo… (khoảng 5–10 giây)';
+    const [nat, list] = await Promise.all([natCheck(), probeCfg ? measureTurns(3000) : Promise.resolve([])]);
+    const lines = [];
+    if (pathInfo) {
+      const p = pathInfo;
+      lines.push(relay ? `Hiện tại: đi vòng qua TURN${p.proto ? ' (' + String(p.proto).toUpperCase() + ')' : ''}, ping ${p.rtt ?? '?'} ms`
+                       : `Hiện tại: kết nối thẳng P2P, ping ${p.rtt ?? '?'} ms. Đây là đường nhanh nhất.`);
+    }
+    lines.push('Mạng của máy này: ' + ({ cone: 'NAT thường, nối thẳng được', symmetric: 'NAT đối xứng (thường là 4G): khó nối thẳng', blocked: 'chặn UDP: phải đi TURN qua TCP, chậm hơn' }[nat] || 'không rõ'));
+    const ok = list.filter((x) => x.ms != null);
+    if (ok.length) {
+      const best = ok[0];
+      turnPick = { url: best.url, ms: best.ms, at: Date.now(), list };
+      pref.set(PICK_KEY, JSON.stringify(turnPick)); applyTurn();
+      lines.push('Máy chủ TURN (ping ước tính):');
+      ok.slice(0, 6).forEach((x, i) => lines.push(`${i ? '   ' : '✓ '}${shortHost(x.url)}: ~${x.ms} ms`));
+      lines.push(`Đã chọn ${shortHost(best.url)}. Áp dụng khi kết nối lại.`);
+    } else if (probeCfg) lines.push('Không đo được máy chủ TURN nào (mạng chặn UDP?).');
+    if (relay || nat !== 'cone') {
+      lines.push('', 'Để nối thẳng P2P (nhanh nhất):',
+        '• Giả lập LDPlayer: Cài đặt → Mạng → bật "Cầu nối mạng" (Network bridging), cài driver, chọn card mạng đang dùng, khởi động lại giả lập.',
+        '• Modem nhà (cả 2 nơi): bật UPnP; tránh dùng 4G cho máy chạy game.');
+    }
+    out.textContent = lines.join('\n');
+    btn.disabled = false;
+    if (ok.length && inSession) { const b = document.createElement('button'); b.className = 'kbtn primary'; b.style.cssText = 'width:100%;height:42px;margin-top:8px'; b.textContent = 'Kết nối lại ngay với máy chủ mới';
+      b.onclick = () => { b.remove(); closeMenu(); scheduleReconnect('Đang chuyển sang máy chủ nhanh hơn…'); }; out.appendChild(b); }
+  });
 
   // ---------- control panel ----------
   function syncMenu() {
