@@ -11,8 +11,10 @@ android {
         applicationId = "com.example.remotescreen"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        // CI build number → each published APK has a higher version (used by the in-app updater)
+        val run = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
+        versionCode = 100 + run
+        versionName = "1.$run"
     }
 
     signingConfigs {
