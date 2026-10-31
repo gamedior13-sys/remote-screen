@@ -440,7 +440,7 @@ class ShareService : Service() {
         when (m.getString("type")) {
             "registered" -> { Log.i(TAG, "registered as ${m.getString("id")}"); state = STATE_READY }
             "error" -> Log.w(TAG, "server error: ${m.optString("message")}")
-            "peer-joined" -> { state = STATE_CONTROLLED; startPeer() }
+            "peer-joined" -> { state = STATE_CONTROLLED; startPeer(m.optJSONArray("ice")) }
             "peer-left" -> { state = STATE_READY; closePeer() }
             "signal" -> {
                 val d = m.getJSONObject("data")
@@ -461,12 +461,31 @@ class ShareService : Service() {
 
     // ---------------------------------------------------------------- peer connection
 
-    private fun startPeer() {
+    private fun parseIce(arr: JSONArray): List<PeerConnection.IceServer> {
+        val list = mutableListOf<PeerConnection.IceServer>()
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val urls = o.get("urls").let { u -> if (u is JSONArray) (0 until u.length()).map { u.getString(it) } else listOf(u.toString()) }
+            val b = PeerConnection.IceServer.builder(urls)
+            if (o.has("username")) b.setUsername(o.getString("username"))
+            if (o.has("credential")) b.setPassword(o.getString("credential"))
+            list.add(b.createIceServer())
+        }
+        return list
+    }
+
+    private fun startPeer(picked: JSONArray? = null) {
         closePeer()
-        fetchIceServers()  // TURN credentials may be short-lived: refresh them for every session
-        val cfg = PeerConnection.RTCConfiguration(iceServers).apply {
+        // The controller measured which TURN relay is closest: use the same one (lowest ping).
+        val pickedList = try { picked?.let { parseIce(it) } } catch (_: Throwable) { null }
+        if (pickedList.isNullOrEmpty()) fetchIceServers()  // TURN credentials may be short-lived: refresh them for every session
+        val servers = if (pickedList.isNullOrEmpty()) iceServers else pickedList
+        val cfg = PeerConnection.RTCConfiguration(servers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+            bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
+            rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE
+            tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.ENABLED
         }
         val peer = factory!!.createPeerConnection(cfg, object : PeerConnection.Observer {
             override fun onIceCandidate(c: IceCandidate) {
