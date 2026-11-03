@@ -86,6 +86,16 @@
   .updbar span { flex: 1; }
   .updbar button { height: 36px; padding: 0 14px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 600; }
   .brand .iconbtn { margin-left: auto; }
+  .syncpill { margin-left: auto; display: flex; align-items: center; gap: 6px; height: 38px; padding: 0 12px; border-radius: 12px;
+    background: rgba(255,255,255,.06); border: 1px solid var(--line2); color: #dfe5f2; font-size: 13.5px; font-weight: 600; flex: none; }
+  .syncpill:active { background: var(--line2); }
+  .syncpill.has { border-color: var(--accent); background: rgba(79,140,255,.18); }
+  #updbanner { position: fixed; z-index: 11; left: 50%; transform: translateX(-50%); top: calc(var(--sat) + 10px); width: min(460px, calc(100% - 20px));
+    display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border-radius: 14px; font-size: 13.5px;
+    background: rgba(24,36,64,.96); border: 1px solid var(--accent); box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+  #updbanner span { flex: 1; min-width: 0; }
+  #updbanner button { height: 34px; padding: 0 12px; border-radius: 10px; font-weight: 600; font-size: 13px; flex: none; }
+  #updbanner .go { background: var(--accent); color: #fff; }
   .iconbtn { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; color: var(--muted); flex: none; }
   .iconbtn:active { background: var(--line); }
   .empty { color: var(--dim); font-size: 13.5px; padding: 6px 4px; }
@@ -245,7 +255,7 @@
     <div class="brand">
       <div class="logo"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg></div>
       <div><h1>Remote Screen</h1><p>Điều khiển máy Android từ xa</p></div>
-      <button class="iconbtn" id="syncBtn" aria-label="Đồng bộ bản mới" title="Đồng bộ bản mới"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/></svg></button>
+      <button class="syncpill" id="syncBtn" aria-label="Đồng bộ bản mới" title="Đồng bộ bản mới"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/></svg><span id="syncLbl">Đồng bộ</span></button>
     </div>
     <div class="updbar hidden" id="updbar"><span id="updtxt">Có bản mới</span><button id="updgo">Cập nhật</button></div>
 
@@ -399,6 +409,7 @@
   </div>
 </section>
 
+<div id="updbanner" class="hidden"><span id="ubTxt"></span><button class="go" id="ubGo">Cập nhật</button><button id="ubX" aria-label="Ẩn">✕</button></div>
 <div id="toast"></div>
 
 <script>
@@ -733,8 +744,14 @@
 
   // ---------- stats & TURN quota ----------
   let last = { bytes: 0, t: 0 }, pathInfo = null;
+  let laidW = 0, laidH = 0, laidBox = '';
   async function updateStats() {
     if (!pc) return;
+    // iOS sometimes skips the video "resize" event when the phone rotates: re-layout if anything changed
+    const B = vbox.getBoundingClientRect(), box = B.width + 'x' + B.height;
+    if (video.videoWidth && (video.videoWidth !== laidW || video.videoHeight !== laidH || box !== laidBox)) {
+      laidW = video.videoWidth; laidH = video.videoHeight; laidBox = box; layout();
+    }
     const stats = await pc.getStats();
     let rtt = null, fps = null, bytes = null, isRelay = null, pairId = null, codecId = null;
     stats.forEach((s) => {
@@ -1400,7 +1417,16 @@
   function showUpdates() {
     const webNew = verNow && verLoaded && verNow.web !== verLoaded.web;
     const appNew = devVer && apkLatest() > devVer.ver;
-    $('#updbar').classList.toggle('hidden', !webNew);
+    $('#updbar').classList.add('hidden');           // replaced by the banner shown on every screen
+    const key = (webNew ? 'w' + verNow.web : '') + (appNew ? 'a' + apkLatest() : '');
+    const show = !!key && pref.get('ubHide', '') !== key;
+    $('#updbanner').classList.toggle('hidden', !show);
+    $('#updbanner').dataset.key = key;
+    $('#updbanner').dataset.kind = webNew ? 'web' : 'app';
+    $('#ubTxt').textContent = webNew && appNew ? 'Có bản mới cho web và app Android'
+      : webNew ? 'Có bản web mới' : 'App Android có bản mới ' + verNow.apk.versionName;
+    $('#syncBtn').classList.toggle('has', !!(webNew || appNew));
+    $('#syncLbl').textContent = webNew || appNew ? 'Có bản mới' : 'Đồng bộ';
     $('#updtxt').textContent = 'Có bản web mới: bấm để cập nhật';
     const parts = [];
     parts.push('Web: ' + (verLoaded ? verLoaded.web : '?') + (webNew ? ' → ' + verNow.web + ' (có bản mới)' : ''));
@@ -1420,6 +1446,11 @@
     location.replace(u.toString());
   }
   $('#updgo').addEventListener('click', reloadWeb);
+  $('#ubX').addEventListener('click', () => { pref.set('ubHide', $('#updbanner').dataset.key || ''); $('#updbanner').classList.add('hidden'); });
+  $('#ubGo').addEventListener('click', () => {
+    if ($('#updbanner').dataset.kind === 'web') return reloadWeb();
+    $('#updbanner').classList.add('hidden'); $('#updApp').click();
+  });
   $('#updWeb').addEventListener('click', reloadWeb);
   $('#syncBtn').addEventListener('click', async () => {
     const b = $('#syncBtn'); b.disabled = true;
