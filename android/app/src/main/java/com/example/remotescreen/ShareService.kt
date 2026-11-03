@@ -233,6 +233,7 @@ class ShareService : Service() {
         override fun run() {
             if (dc == null || stopping) return
             thread { sendToController(deviceStats()) }
+            try { updateCapture() } catch (_: Throwable) {}
             mainH.postDelayed(this, 10_000)
         }
     }
@@ -298,12 +299,41 @@ class ShareService : Service() {
         return ((sw * scale).toInt() and 1.inv()) to ((sh * scale).toInt() and 1.inv())
     }
 
+    /** Size the capture's VirtualDisplay really has right now (the resize may lag or fail). */
+    private fun vdSize(): Pair<Int, Int>? = try {
+        val f = ScreenCapturerAndroid::class.java.getDeclaredField("virtualDisplay").apply { isAccessible = true }
+        val vd = f.get(capturer) as? android.hardware.display.VirtualDisplay
+        val p = android.graphics.Point()
+        @Suppress("DEPRECATION")
+        vd?.display?.getRealSize(p)
+        if (p.x > 0 && p.y > 0) p.x to p.y else null
+    } catch (_: Throwable) { null }
+
+    /**
+     * Controller coordinates are 0..1 of the VIDEO frame. While the screen rotates (or if the capture
+     * could not follow the rotation) the real screen is letter-boxed inside that frame, so 0..1 of the
+     * video is not 0..1 of the screen. Convert using the actual geometry: this keeps taps exact.
+     */
+    private fun toScreen(nx: Float, ny: Float): Pair<Float, Float> {
+        val (sw, sh) = realScreen()
+        val (vw, vh) = vdSize() ?: (capW to capH)
+        if (sw <= 0 || sh <= 0 || vw <= 0 || vh <= 0) return nx to ny
+        val s = minOf(vw / sw.toFloat(), vh / sh.toFloat())
+        val cw = sw * s; val ch = sh * s
+        val ox = (vw - cw) / 2f; val oy = (vh - ch) / 2f
+        val x = ((nx * vw - ox) / cw).coerceIn(0f, 1f)
+        val y = ((ny * vh - oy) / ch).coerceIn(0f, 1f)
+        return x to y
+    }
+
     /** Follow screen rotation / quality changes so the video always matches the real screen. */
     @Synchronized
     private fun updateCapture() {
         val c = capturer ?: return
         val (w, h) = captureSize()
-        if (w == capW && h == capH) return
+        // Compare with what the virtual display really is, so a lost/failed resize is retried.
+        val actual = vdSize()
+        if (w == capW && h == capH && (actual == null || actual == (w to h))) return
         if (resizeCapture(c, w, h)) { capW = w; capH = h; applyOutputFormat() }
     }
 
@@ -575,12 +605,21 @@ class ShareService : Service() {
         val f = { k: String -> o.getDouble(k).toFloat() }
         when (o.getString("t")) {
             // realtime multi-touch (game mode)
-            "td" -> svc.touchDown(o.getInt("i"), f("x"), f("y"))
-            "tm" -> { val p = o.getJSONArray("p"); for (k in 0 until p.length()) { val a = p.getJSONArray(k); svc.touchMove(a.getInt(0), a.getDouble(1).toFloat(), a.getDouble(2).toFloat()) } }
+            "td" -> { val (x, y) = toScreen(f("x"), f("y")); svc.touchDown(o.getInt("i"), x, y) }
+            "tm" -> { val p = o.getJSONArray("p"); for (k in 0 until p.length()) { val a = p.getJSONArray(k); val (x, y) = toScreen(a.getDouble(1).toFloat(), a.getDouble(2).toFloat()); svc.touchMove(a.getInt(0), x, y) } }
             "tu" -> svc.touchUp(o.getInt("i"))
             "tc" -> svc.touchCancel()
             // macros, game watch
-            "macro_save" -> mainH.post { svc.saveMacro(o.getJSONObject("m")) }
+            "macro_save" -> {
+                // store macros in real-screen coordinates
+                val m = o.getJSONObject("m"); val st = m.optJSONArray("steps")
+                if (st != null) for (k in 0 until st.length()) {
+                    val e = st.getJSONObject(k)
+                    if (e.has("x")) { val (x, y) = toScreen(e.getDouble("x").toFloat(), e.getDouble("y").toFloat()); e.put("x", x.toDouble()).put("y", y.toDouble()) }
+                    if (e.has("x2")) { val (x, y) = toScreen(e.getDouble("x2").toFloat(), e.getDouble("y2").toFloat()); e.put("x2", x.toDouble()).put("y2", y.toDouble()) }
+                }
+                mainH.post { svc.saveMacro(m) }
+            }
             "macro_del" -> mainH.post { svc.deleteMacro(o.getString("name")) }
             "macro_run" -> mainH.post { svc.runMacro(o.getString("name")) }
             "macro_stop" -> mainH.post { svc.stopMacro() }
@@ -598,11 +637,11 @@ class ShareService : Service() {
                 }
             }
             "keep_screen" -> { getSharedPreferences("game", MODE_PRIVATE).edit().putBoolean("keepScreen", o.optBoolean("on", true)).apply() }
-            "tap" -> svc.tap(o.getDouble("x").toFloat(), o.getDouble("y").toFloat(), o.optLong("d", 50))
-            "swipe" -> svc.swipe(
-                o.getDouble("x1").toFloat(), o.getDouble("y1").toFloat(),
-                o.getDouble("x2").toFloat(), o.getDouble("y2").toFloat(), o.optLong("d", 200)
-            )
+            "tap" -> { val (x, y) = toScreen(f("x"), f("y")); svc.tap(x, y, o.optLong("d", 50)) }
+            "swipe" -> {
+                val (x1, y1) = toScreen(f("x1"), f("y1")); val (x2, y2) = toScreen(f("x2"), f("y2"))
+                svc.swipe(x1, y1, x2, y2, o.optLong("d", 200))
+            }
             "key" -> svc.key(o.getString("k"))
             "text" -> svc.text(o.getString("s"))
             "settext" -> svc.setText(o.getString("s"))
