@@ -119,16 +119,23 @@ class ControlAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun run(path: Path, durationMs: Long) {
+    private fun run(path: Path, durationMs: Long): Boolean {
         val stroke = GestureDescription.StrokeDescription(path, 0, durationMs.coerceIn(1, 2000))
-        dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
+        return dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
     }
 
     fun tap(nx: Float, ny: Float, durationMs: Long) {
         val (w, h) = screenSize()
-        val p = Path().apply { moveTo(nx.coerceIn(0f, 1f) * w, ny.coerceIn(0f, 1f) * h) }
-        // < 120 ms is a normal tap, longer presses are passed through as long-press
-        run(p, if (durationMs < 120) 50 else durationMs)
+        val x = nx.coerceIn(0f, 1f) * w
+        val y = ny.coerceIn(0f, 1f) * h
+        // Vài ROM từ chối path chỉ có moveTo → thêm lineTo 1px cho chắc.
+        val p = Path().apply { moveTo(x, y); lineTo(x + 1f, y) }
+        // < 120 ms là chạm thường, dài hơn là long-press
+        val d = if (durationMs < 120) 50 else durationMs
+        if (!run(p, d)) {
+            // dispatchGesture trả false khi đang bận gesture khác → thử lại 1 lần sau 40ms
+            main.postDelayed({ run(p, d) }, 40)
+        }
     }
 
     fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long) {
