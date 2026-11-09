@@ -424,7 +424,7 @@
     eco: { fps: 15, long: 720, br: 700000, label: 'Tiết kiệm' },
     bal: { fps: 30, long: 1280, br: 2500000, label: 'Cân bằng' },
     hi: { fps: 60, long: 960, br: 6000000, label: 'Mượt' },
-    max: { fps: 60, long: 720, br: 4000000, label: 'Siêu mượt' },
+    max: { fps: 60, long: 720, br: 3000000, label: 'Siêu mượt' },
   };
   const RECONNECT_MS = 120000;
   let reconnectLimit = RECONNECT_MS;
@@ -712,6 +712,8 @@
     pc.onicecandidate = (e) => { if (e.candidate && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'signal', data: { candidate: e.candidate } })); };
     pc.ondatachannel = (e) => {
       dc = e.channel;
+      ctlSeq = Math.floor(Math.random() * 1e9); ackSeen = false;
+      ctlPending.forEach((st) => clearTimeout(st.timer)); ctlPending.clear();
       dc.onopen = () => sendQuality();
       dc.onmessage = (ev) => {
         try {
@@ -756,7 +758,7 @@
     const q = pref.get('quality2', '');
     if (q && QUALITY[q]) return q;
     const viaMetered = relay && turnPick && relayOf(turnPick.url) && relayOf(turnPick.url).name === 'Metered';
-    return viaMetered ? 'eco' : 'hi';
+    return viaMetered ? 'eco' : relay ? 'max' : 'hi';
   }
   function sendQuality() {
     const q = QUALITY[qualityKey()];
@@ -963,7 +965,10 @@
   // Lệnh không được ACK trong 400ms sẽ gửi lại (tối đa 3 lần) — relay TURN hay rơi gói.
   // Android dedupe theo seq nên gửi lại không bao giờ bị nhân đôi (kể cả 'text' nối chữ).
   const RESEND_MS = 400, MAX_TRIES = 3;
-  let ctlSeq = 0;
+  // Random start: the phone remembers the last 256 seq it saw, and a page reload used to restart at 1,
+  // so the phone ignored the first 256 commands of the new session ("connected but taps do nothing").
+  let ctlSeq = Math.floor(Math.random() * 1e9);
+  let ackSeen = false;            // resend only once the phone has shown it answers ACKs (old app: no resend)
   const ctlPending = new Map();   // seq -> { msg, tries, timer }
   function sendCtlRaw(o) {
     if (!dc || dc.readyState !== 'open') return false;
@@ -975,7 +980,8 @@
     const msg = { ...o, seq: ++ctlSeq };
     ctlPending.set(msg.seq, { msg, tries: 1, timer: 0 });
     sendCtlRaw(msg);
-    scheduleResend(msg.seq);
+    if (ackSeen) scheduleResend(msg.seq);
+    else setTimeout(() => ctlPending.delete(msg.seq), 3000);
   }
   function scheduleResend(seq) {
     const st = ctlPending.get(seq);
@@ -991,6 +997,7 @@
     }, RESEND_MS);
   }
   function ackCtl(seq) {
+    ackSeen = true;
     const st = ctlPending.get(seq);
     if (!st) return;
     clearTimeout(st.timer);
@@ -1627,7 +1634,7 @@
     document.querySelectorAll('#tseg button').forEach((b) => b.classList.toggle('on', b.dataset.t === pref.get('touch', 'direct')));
     $('#qnote').textContent = pref.get('quality2', '')
       ? (relay && k === 'hi' ? 'Đang đi qua TURN: mức Mượt tốn dung lượng nhanh.' : '')
-      : 'Tự động: Mượt 60 fps (chỉ hạ xuống Tiết kiệm khi đi qua Metered vì dung lượng ít).';
+      : 'Tự động: Mượt 60 fps khi nối thẳng, Siêu mượt 720p khi qua máy trung chuyển (Tiết kiệm nếu qua Metered).';
     $('#tnote').textContent = padMode()
       ? 'Kéo 1 ngón = di chuột · chạm = bấm · chạm 2 lần rồi kéo = vuốt/kéo thả · giữ = nhấn giữ.'
       : 'Chạm = bấm · kéo = vuốt · giữ để hiện kính lúp, nhả tay để bấm đúng chỗ.';
