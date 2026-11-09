@@ -713,7 +713,18 @@
     pc.ondatachannel = (e) => {
       dc = e.channel;
       dc.onopen = () => sendQuality();
-      dc.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.t === 'ime') onIme(m); else onDeviceMsg(m); } catch (err) { console.warn(err); } };
+      dc.onmessage = (ev) => {
+        try {
+          const m = JSON.parse(ev.data);
+          if (m.t === 'ack') return ackCtl(m.seq);
+          if (m.t === 'warn') {
+            if (m.k === 'no_a11y') toast('Bật "Trợ năng" (Accessibility) cho app trên điện thoại để điều khiển được');
+            else if (m.msg) toast(m.msg);
+            return;
+          }
+          if (m.t === 'ime') onIme(m); else onDeviceMsg(m);
+        } catch (err) { console.warn(err); }
+      };
     };
     pc.ontrack = (e) => {
       video.srcObject = e.streams[0];
@@ -749,7 +760,7 @@
   }
   function sendQuality() {
     const q = QUALITY[qualityKey()];
-    if (dc && dc.readyState === 'open') dc.send(JSON.stringify({ t: 'quality', fps: q.fps, long: q.long, br: q.br }));
+    sendCtl({ t: 'quality', fps: q.fps, long: q.long, br: q.br });   // có ACK + gửi lại nếu rơi
     syncMenu();
     $('#qlabel').textContent = QUALITY[qualityKey()].label;
   }
@@ -948,7 +959,43 @@
   }
 
   // ---------- control ----------
-  const sendCtl = (o) => { if (dc && dc.readyState === 'open') dc.send(JSON.stringify(o)); };
+  // Kênh điều khiển TIN CẬY: mỗi lệnh có số thứ tự (seq), điện thoại ACK lại.
+  // Lệnh không được ACK trong 400ms sẽ gửi lại (tối đa 3 lần) — relay TURN hay rơi gói.
+  // Android dedupe theo seq nên gửi lại không bao giờ bị nhân đôi (kể cả 'text' nối chữ).
+  const RESEND_MS = 400, MAX_TRIES = 3;
+  let ctlSeq = 0;
+  const ctlPending = new Map();   // seq -> { msg, tries, timer }
+  function sendCtlRaw(o) {
+    if (!dc || dc.readyState !== 'open') return false;
+    dc.send(JSON.stringify(o));
+    return true;
+  }
+  function sendCtl(o) {
+    if (!dc || dc.readyState !== 'open') return;   // không giữ lệnh cũ khi mất kết nối
+    const msg = { ...o, seq: ++ctlSeq };
+    ctlPending.set(msg.seq, { msg, tries: 1, timer: 0 });
+    sendCtlRaw(msg);
+    scheduleResend(msg.seq);
+  }
+  function scheduleResend(seq) {
+    const st = ctlPending.get(seq);
+    if (!st) return;
+    clearTimeout(st.timer);
+    st.timer = setTimeout(() => {
+      const cur = ctlPending.get(seq);
+      if (!cur) return;
+      if (cur.tries >= MAX_TRIES) { ctlPending.delete(seq); return; }
+      cur.tries++;
+      sendCtlRaw(cur.msg);
+      scheduleResend(seq);
+    }, RESEND_MS);
+  }
+  function ackCtl(seq) {
+    const st = ctlPending.get(seq);
+    if (!st) return;
+    clearTimeout(st.timer);
+    ctlPending.delete(seq);
+  }
   function haptic(ms) { try { navigator.vibrate && navigator.vibrate(ms || 8); } catch {} }
   const padMode = () => !gameOn() && pref.get('touch', 'direct') === 'pad';
   const loupeOn = () => pref.get('loupe', '1') === '1';
@@ -1265,7 +1312,7 @@
   function flushMoves() {
     moveRaf = 0;
     if (!pendMove.size) return;
-    sendCtl({ t: 'tm', p: [...pendMove.entries()].map(([i, p]) => [i, r4(p.x), r4(p.y)]) });
+    sendCtlRaw({ t: 'tm', p: [...pendMove.entries()].map(([i, p]) => [i, r4(p.x), r4(p.y)]) });   // di chuyển: không chờ ACK
     pendMove.clear();
   }
   // A finger only becomes a live (streamed) touch once it moves, is held, or another finger joins.
