@@ -618,13 +618,49 @@ class ShareService : Service() {
     }
 
     private fun handleControl(o: JSONObject) {
-        if (o.optString("t") == "quality") {
+        val t = o.optString("t")
+        val seq = o.optInt("seq", 0)
+        // Gói gửi lại (retry) mang cùng seq → chỉ xử lý 1 lần, nhưng vẫn ACK lại.
+        if (seq > 0 && !markSeq(seq)) {
+            sendToController(JSONObject().put("t", "ack").put("seq", seq))
+            return
+        }
+        try {
+            applyControl(o, t)
+        } catch (e: Throwable) {
+            Log.w(TAG, "ctrl $t", e)
+        } finally {
+            if (seq > 0) sendToController(JSONObject().put("t", "ack").put("seq", seq))
+        }
+    }
+
+    // Vòng đệm chống trùng theo seq (controller gửi lại khi mất ACK).
+    private val seenSeq = LinkedHashSet<Int>()
+
+    @Synchronized
+    private fun markSeq(seq: Int): Boolean {
+        if (seenSeq.contains(seq)) return false
+        seenSeq.add(seq)
+        if (seenSeq.size > 256) {
+            val it = seenSeq.iterator()
+            it.next(); it.remove()
+        }
+        return true
+    }
+
+    private fun applyControl(o: JSONObject, t: String) {
+        if (t == "quality") {
             applyQuality(o.optInt("fps", fps), o.optInt("long", longSideLimit), o.optInt("br", maxBitrate))
             return
         }
-        val svc = ControlAccessibilityService.instance ?: return
+        val svc = ControlAccessibilityService.instance
+        if (svc == null) {
+            // Trợ năng đang tắt → báo về controller thay vì im lặng.
+            sendToController(JSONObject().put("t", "warn").put("k", "no_a11y"))
+            return
+        }
         val f = { k: String -> o.getDouble(k).toFloat() }
-        when (o.getString("t")) {
+        when (t) {
             // realtime multi-touch (game mode)
             "td" -> { val (x, y) = toScreen(f("x"), f("y")); svc.touchDown(o.getInt("i"), x, y) }
             "tm" -> { val p = o.getJSONArray("p"); for (k in 0 until p.length()) { val a = p.getJSONArray(k); val (x, y) = toScreen(a.getDouble(1).toFloat(), a.getDouble(2).toFloat()); svc.touchMove(a.getInt(0), x, y) } }
