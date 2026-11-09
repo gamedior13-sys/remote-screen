@@ -566,6 +566,7 @@ class ShareService : Service() {
                 override fun onBufferedAmountChange(prev: Long) {}
                 override fun onStateChange() {
                     if (ch.state() == DataChannel.State.OPEN) {
+                        synchronized(this@ShareService) { seenSeq.clear() }   // new controller = new numbering
                         ControlAccessibilityService.imeListener = { on, text, pw ->
                             sendToController(JSONObject().put("t", "ime").put("on", on).put("text", text).put("pw", pw))
                         }
