@@ -106,6 +106,8 @@
 
   /* ---------- session screen (edge-to-edge) ---------- */
   #session { position: fixed; inset: 0; background: #000; overflow: hidden; }
+  html, body { touch-action: manipulation; }
+  body.insession { overflow: hidden; position: fixed; inset: 0; }
   #vbox { position: absolute; inset: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
   body.shownav #vbox { bottom: calc(var(--sab) + 64px); }
   video { position: absolute; transform-origin: 50% 50%; outline: none; pointer-events: none; background: #000; }
@@ -269,7 +271,7 @@
       <div class="field">
         <label for="pw">Mật khẩu</label>
         <div class="pwbox">
-          <input id="pw" class="inp" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu">
+          <input id="pw" class="inp" type="password" autocomplete="off" placeholder="Nhập mật khẩu">
           <button class="eye" id="eye" aria-label="Hiện mật khẩu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
         </div>
       </div>
@@ -382,7 +384,8 @@
     <div class="seg" id="qseg">
       <button data-q="eco">Tiết kiệm<small>15 fps</small></button>
       <button data-q="bal">Cân bằng<small>30 fps</small></button>
-      <button data-q="hi">Mượt<small>60 fps</small></button>
+      <button data-q="hi">Mượt<small>60 fps · 960p</small></button>
+      <button data-q="max">Siêu mượt<small>60 fps · 720p</small></button>
     </div>
     <div class="mnote" id="qnote"></div>
     <h4>Xoay hình</h4>
@@ -421,6 +424,7 @@
     eco: { fps: 15, long: 720, br: 700000, label: 'Tiết kiệm' },
     bal: { fps: 30, long: 1280, br: 2500000, label: 'Cân bằng' },
     hi: { fps: 60, long: 960, br: 6000000, label: 'Mượt' },
+    max: { fps: 60, long: 720, br: 4000000, label: 'Siêu mượt' },
   };
   const RECONNECT_MS = 120000;
   let reconnectLimit = RECONNECT_MS;
@@ -647,6 +651,7 @@
   }
 
   function openSession() {
+    document.body.classList.add('insession');
     inSession = true;
     $('#home').classList.add('hidden');
     $('#session').classList.remove('hidden');
@@ -708,18 +713,7 @@
     pc.ondatachannel = (e) => {
       dc = e.channel;
       dc.onopen = () => sendQuality();
-      dc.onmessage = (ev) => {
-        try {
-          const m = JSON.parse(ev.data);
-          if (m.t === 'ack') return ackCtl(m.seq);
-          if (m.t === 'warn') {
-            if (m.k === 'no_a11y') toast('Bật "Trợ năng" (Accessibility) cho app trên điện thoại để điều khiển được');
-            else if (m.msg) toast(m.msg);
-            return;
-          }
-          if (m.t === 'ime') onIme(m); else onDeviceMsg(m);
-        } catch (err) { console.warn(err); }
-      };
+      dc.onmessage = (ev) => { try { const m = JSON.parse(ev.data); if (m.t === 'ime') onIme(m); else onDeviceMsg(m); } catch (err) { console.warn(err); } };
     };
     pc.ontrack = (e) => {
       video.srcObject = e.streams[0];
@@ -745,10 +739,17 @@
   video.addEventListener('resize', layout);
 
   // ---------- quality ----------
-  function qualityKey() { return pref.get('quality', '') || (relay ? 'eco' : 'bal'); }
+  // Cloudflare/ExpressTURN give 1000 GB a month: no need to drop to 15 fps on TURN any more.
+  // Only the small Metered trial quota is still spared.
+  function qualityKey() {
+    const q = pref.get('quality2', '');
+    if (q && QUALITY[q]) return q;
+    const viaMetered = relay && turnPick && relayOf(turnPick.url) && relayOf(turnPick.url).name === 'Metered';
+    return viaMetered ? 'eco' : 'hi';
+  }
   function sendQuality() {
     const q = QUALITY[qualityKey()];
-    sendCtl({ t: 'quality', fps: q.fps, long: q.long, br: q.br });   // có ACK + gửi lại nếu rơi
+    if (dc && dc.readyState === 'open') dc.send(JSON.stringify({ t: 'quality', fps: q.fps, long: q.long, br: q.br }));
     syncMenu();
     $('#qlabel').textContent = QUALITY[qualityKey()].label;
   }
@@ -756,7 +757,13 @@
   // ---------- stats & TURN quota ----------
   let last = { bytes: 0, t: 0 }, pathInfo = null;
   let laidW = 0, laidH = 0, laidBox = '';
+  function unscroll() {
+    // iOS Safari often leaves the page scrolled after the keyboard closes: the picture stays put but
+    // touches are then shifted by that amount. Pin the page back to the top.
+    if (inSession && (window.scrollY || window.scrollX || document.documentElement.scrollTop)) { window.scrollTo(0, 0); layout(); }
+  }
   async function updateStats() {
+    unscroll();
     if (!pc) return;
     // iOS sometimes skips the video "resize" event when the phone rotates: re-layout if anything changed
     const B = vbox.getBoundingClientRect(), box = B.width + 'x' + B.height;
@@ -786,7 +793,7 @@
     if (bytes != null) last = { bytes, t: now };
     if (isRelay !== null && isRelay !== relay) {
       relay = isRelay;
-      if (relay && !pref.get('quality', '')) toast('Hình đang đi qua máy trung chuyển (TURN): tự chuyển sang Tiết kiệm để đỡ tốn dung lượng');
+
       sendQuality();
       if (relay) refreshUsage();
     }
@@ -846,6 +853,7 @@
   }
 
   function endSession(msg) {
+    document.body.classList.remove('insession');
     inSession = false; reconnecting = false; reconnectSince = 0;
     clearTimeout(retryTimer); clearInterval(usageTimer);
     closePeer();
@@ -940,43 +948,7 @@
   }
 
   // ---------- control ----------
-  // Kênh điều khiển TIN CẬY: mỗi lệnh có số thứ tự (seq), điện thoại ACK lại.
-  // Lệnh không được ACK trong 400ms sẽ gửi lại (tối đa 3 lần) — relay TURN hay rơi gói.
-  // Android dedupe theo seq nên gửi lại không bao giờ bị nhân đôi (kể cả 'text' nối chữ).
-  const RESEND_MS = 400, MAX_TRIES = 3;
-  let ctlSeq = 0;
-  const ctlPending = new Map();   // seq -> { msg, tries, timer }
-  function sendCtlRaw(o) {
-    if (!dc || dc.readyState !== 'open') return false;
-    dc.send(JSON.stringify(o));
-    return true;
-  }
-  function sendCtl(o) {
-    if (!dc || dc.readyState !== 'open') return;   // không giữ lệnh cũ khi mất kết nối
-    const msg = { ...o, seq: ++ctlSeq };
-    ctlPending.set(msg.seq, { msg, tries: 1, timer: 0 });
-    sendCtlRaw(msg);
-    scheduleResend(msg.seq);
-  }
-  function scheduleResend(seq) {
-    const st = ctlPending.get(seq);
-    if (!st) return;
-    clearTimeout(st.timer);
-    st.timer = setTimeout(() => {
-      const cur = ctlPending.get(seq);
-      if (!cur) return;
-      if (cur.tries >= MAX_TRIES) { ctlPending.delete(seq); return; }
-      cur.tries++;
-      sendCtlRaw(cur.msg);
-      scheduleResend(seq);
-    }, RESEND_MS);
-  }
-  function ackCtl(seq) {
-    const st = ctlPending.get(seq);
-    if (!st) return;
-    clearTimeout(st.timer);
-    ctlPending.delete(seq);
-  }
+  const sendCtl = (o) => { if (dc && dc.readyState === 'open') dc.send(JSON.stringify(o)); };
   function haptic(ms) { try { navigator.vibrate && navigator.vibrate(ms || 8); } catch {} }
   const padMode = () => !gameOn() && pref.get('touch', 'direct') === 'pad';
   const loupeOn = () => pref.get('loupe', '1') === '1';
@@ -1245,7 +1217,7 @@
     sheet.classList.toggle('live', !!live);
     textin.placeholder = live ? 'Gõ vào ô đang chọn trên máy Android…' : 'Gõ chữ gửi vào ô đang chọn…';
   }
-  function closeSheet() { sheet.classList.remove('open', 'live'); sheetByIme = false; textin.blur(); textin.type = 'text'; }
+  function closeSheet() { sheet.classList.remove('open', 'live'); sheetByIme = false; textin.blur(); textin.type = 'text'; setTimeout(unscroll, 350); }
   function onIme(m) {
     imeActive = !!m.on;
     if (imeActive) {
@@ -1278,6 +1250,8 @@
     const vv = window.visualViewport;
     const fit = () => { sheet.style.bottom = Math.max(0, window.innerHeight - vv.height - vv.offsetTop) + 'px'; };
     vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
+    vv.addEventListener('resize', () => setTimeout(unscroll, 300));
+    textin.addEventListener('blur', () => setTimeout(unscroll, 300));
   }
 
   // ---------- game mode: realtime multi-touch, macros, game watch, device stats ----------
@@ -1291,7 +1265,7 @@
   function flushMoves() {
     moveRaf = 0;
     if (!pendMove.size) return;
-    sendCtlRaw({ t: 'tm', p: [...pendMove.entries()].map(([i, p]) => [i, r4(p.x), r4(p.y)]) });   // di chuyển: không chờ ACK
+    sendCtl({ t: 'tm', p: [...pendMove.entries()].map(([i, p]) => [i, r4(p.x), r4(p.y)]) });
     pendMove.clear();
   }
   // A finger only becomes a live (streamed) touch once it moves, is held, or another finger joins.
@@ -1446,6 +1420,7 @@
       if (low && !warned.low) { warned.low = 1; showAlert(`Pin máy Android còn ${m.batt}%, nên cắm sạc`); }
       if (!hot) warned.hot = 0; if (!low) warned.low = 0;
       $('#gstat').textContent = `Máy Android: pin ${m.batt}%${m.chg ? ' (đang sạc)' : ''} · ${m.temp.toFixed(0)}°C`;
+      renderFpsInfo();
     }
     else if (m.t === 'alert') {
       if (m.k === 'game_back') { $('#alertbar').classList.add('hidden'); toast(m.msg); }
@@ -1525,6 +1500,24 @@
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') fetchVersion(); });
   fetchVersion();
 
+  // Where the frame rate is lost: emulator capture → encoder → network → this phone.
+  function fpsDiagnosis() {
+    const m = devStat || {};
+    if (m.capFps == null && m.encFps == null) return null;
+    const cap = Math.round(m.capFps || 0), enc = Math.round(m.encFps || 0), want = QUALITY[qualityKey()].fps;
+    const sw = /openh264|libvpx|software|SW/i.test(m.encoder || '') ? 'phần mềm' : m.encoder ? 'phần cứng' : '';
+    const lim = { cpu: 'CPU máy Android mã hoá không kịp', bandwidth: 'mạng không đủ băng thông', other: 'giới hạn khác' }[m.limit] || '';
+    let tip = '';
+    if (cap && cap < want * 0.6) tip = 'Giả lập chỉ xuất ' + cap + ' fps: mở LDPlayer → Cài đặt → Nâng cao → FPS = 60 (và bật khung hình cao trong game). Màn hình đứng yên thì fps thấp là bình thường.';
+    else if (m.limit === 'cpu') tip = 'CPU không kịp mã hoá: chọn "Siêu mượt (720p)" hoặc tăng nhân CPU cho LDPlayer.';
+    else if (m.limit === 'bandwidth') tip = 'Mạng chậm: chọn "Siêu mượt (720p)" hoặc "Cân bằng".';
+    return { cap, enc, want, sw, lim, tip, size: m.encW ? m.encW + '×' + m.encH : '' };
+  }
+  function renderFpsInfo() {
+    const d = fpsDiagnosis(); if (!d) return;
+    $('#gstat').textContent += ` · chụp ${d.cap} fps → gửi ${d.enc} fps${d.size ? ' (' + d.size + ')' : ''}${d.lim ? ' · ' + d.lim : ''}`;
+  }
+
   function resetGame() { devVer = null; caps = []; gstate = null; devStat = null; slots.clear(); pendMove.clear(); stopTools(); warned = {}; $('#alertbar').classList.add('hidden'); $('#saveBox').classList.add('hidden'); }
 
   // ---------- network test ----------
@@ -1571,6 +1564,8 @@
       lines.push('', 'Không nối thẳng được thì app tự đi qua máy trung chuyển nhanh nhất ở trên (Cloudflare/Metered gần Việt Nam).',
         'Muốn nối thẳng: modem nơi đặt máy Android cần NAT thường (bật UPnP/DMZ), giả lập bật "Cầu nối mạng".');
     }
+    const fd = fpsDiagnosis();
+    if (fd) lines.push('', `Khung hình: giả lập chụp ${fd.cap} fps → mã hoá ${fd.enc}/${fd.want} fps${fd.sw ? ' (mã hoá ' + fd.sw + ')' : ''}${fd.lim ? ' · ' + fd.lim : ''}`, fd.tip || 'FPS đang đạt mức mong muốn.');
     out.textContent = lines.join('\n');
     btn.disabled = false;
     if (ok.length && inSession) { const b = document.createElement('button'); b.className = 'kbtn primary'; b.style.cssText = 'width:100%;height:42px;margin-top:8px'; b.textContent = 'Kết nối lại ngay với máy chủ mới';
@@ -1583,9 +1578,9 @@
     document.querySelectorAll('#qseg button').forEach((b) => b.classList.toggle('on', b.dataset.q === k));
     document.querySelectorAll('#rseg button').forEach((b) => b.classList.toggle('on', b.dataset.r === rotMode()));
     document.querySelectorAll('#tseg button').forEach((b) => b.classList.toggle('on', b.dataset.t === pref.get('touch', 'direct')));
-    $('#qnote').textContent = pref.get('quality', '')
+    $('#qnote').textContent = pref.get('quality2', '')
       ? (relay && k === 'hi' ? 'Đang đi qua TURN: mức Mượt tốn dung lượng nhanh.' : '')
-      : 'Tự động: Cân bằng khi kết nối thẳng, Tiết kiệm khi đi qua TURN.';
+      : 'Tự động: Mượt 60 fps (chỉ hạ xuống Tiết kiệm khi đi qua Metered vì dung lượng ít).';
     $('#tnote').textContent = padMode()
       ? 'Kéo 1 ngón = di chuột · chạm = bấm · chạm 2 lần rồi kéo = vuốt/kéo thả · giữ = nhấn giữ.'
       : 'Chạm = bấm · kéo = vuốt · giữ để hiện kính lúp, nhả tay để bấm đúng chỗ.';
@@ -1614,7 +1609,7 @@
   $('#menu').querySelectorAll('.navrow [data-key]').forEach((b) => b.addEventListener('click', () => setTimeout(closeMenu, 120)));
   $('#qseg').addEventListener('click', (e) => {
     const b = e.target.closest('[data-q]'); if (!b) return;
-    pref.set('quality', b.dataset.q); sendQuality(); toast('Chất lượng: ' + QUALITY[b.dataset.q].label);
+    pref.set('quality2', b.dataset.q); sendQuality(); toast('Chất lượng: ' + QUALITY[b.dataset.q].label);
   });
   $('#rseg').addEventListener('click', (e) => {
     const b = e.target.closest('[data-r]'); if (!b) return;
@@ -1663,6 +1658,9 @@
   if (new URLSearchParams(location.search).get('app') === 'android') { $('#hint').classList.add('hidden'); document.querySelector('.foot a').classList.add('hidden'); }
   const qs = new URLSearchParams(location.search);
   const qid = qs.get('id');
+  // The page (or the iPhone home-screen app) must not keep reopening with an ID pre-filled:
+  // consume the one-time parameters and clean the address.
+  if (qid || qs.get('v')) { try { history.replaceState(null, '', location.pathname); } catch {} }
   if (qid) {
     $('#id').value = fmtId(qid);
     // after "Tải lại trang" during a session: reconnect straight away with the saved password

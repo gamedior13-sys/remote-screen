@@ -232,9 +232,30 @@ class ShareService : Service() {
     private val statTick = object : Runnable {
         override fun run() {
             if (dc == null || stopping) return
-            thread { sendToController(deviceStats()) }
+            val st = deviceStats()
+            // What limits the frame rate: capture (the emulator), the encoder (CPU) or the network?
+            val peer = pc
+            if (peer == null) thread { sendToController(st) }
+            else try {
+                peer.getStats { report ->
+                    try {
+                        for (v in report.statsMap.values) {
+                            val m = v.members
+                            if (v.type == "media-source" && m["kind"] == "video") (m["framesPerSecond"] as? Number)?.let { st.put("capFps", it.toDouble()) }
+                            if (v.type == "outbound-rtp" && m["kind"] == "video") {
+                                (m["framesPerSecond"] as? Number)?.let { st.put("encFps", it.toDouble()) }
+                                (m["frameWidth"] as? Number)?.let { st.put("encW", it.toInt()) }
+                                (m["frameHeight"] as? Number)?.let { st.put("encH", it.toInt()) }
+                                (m["qualityLimitationReason"] as? String)?.let { st.put("limit", it) }
+                                (m["encoderImplementation"] as? String)?.let { st.put("encoder", it) }
+                            }
+                        }
+                    } catch (_: Throwable) {}
+                    sendToController(st)
+                }
+            } catch (_: Throwable) { thread { sendToController(st) } }
             try { updateCapture() } catch (_: Throwable) {}
-            mainH.postDelayed(this, 10_000)
+            mainH.postDelayed(this, 5_000)
         }
     }
 
@@ -597,49 +618,13 @@ class ShareService : Service() {
     }
 
     private fun handleControl(o: JSONObject) {
-        val t = o.optString("t")
-        val seq = o.optInt("seq", 0)
-        // Gói gửi lại (retry) mang cùng seq → chỉ xử lý 1 lần, nhưng vẫn ACK lại.
-        if (seq > 0 && !markSeq(seq)) {
-            sendToController(JSONObject().put("t", "ack").put("seq", seq))
-            return
-        }
-        try {
-            applyControl(o, t)
-        } catch (e: Throwable) {
-            Log.w(TAG, "ctrl $t", e)
-        } finally {
-            if (seq > 0) sendToController(JSONObject().put("t", "ack").put("seq", seq))
-        }
-    }
-
-    // Vòng đệm chống trùng theo seq (controller gửi lại khi mất ACK).
-    private val seenSeq = LinkedHashSet<Int>()
-
-    @Synchronized
-    private fun markSeq(seq: Int): Boolean {
-        if (seenSeq.contains(seq)) return false
-        seenSeq.add(seq)
-        if (seenSeq.size > 256) {
-            val it = seenSeq.iterator()
-            it.next(); it.remove()
-        }
-        return true
-    }
-
-    private fun applyControl(o: JSONObject, t: String) {
-        if (t == "quality") {
+        if (o.optString("t") == "quality") {
             applyQuality(o.optInt("fps", fps), o.optInt("long", longSideLimit), o.optInt("br", maxBitrate))
             return
         }
-        val svc = ControlAccessibilityService.instance
-        if (svc == null) {
-            // Trợ năng đang tắt → báo về controller thay vì im lặng.
-            sendToController(JSONObject().put("t", "warn").put("k", "no_a11y"))
-            return
-        }
+        val svc = ControlAccessibilityService.instance ?: return
         val f = { k: String -> o.getDouble(k).toFloat() }
-        when (t) {
+        when (o.getString("t")) {
             // realtime multi-touch (game mode)
             "td" -> { val (x, y) = toScreen(f("x"), f("y")); svc.touchDown(o.getInt("i"), x, y) }
             "tm" -> { val p = o.getJSONArray("p"); for (k in 0 until p.length()) { val a = p.getJSONArray(k); val (x, y) = toScreen(a.getDouble(1).toFloat(), a.getDouble(2).toFloat()); svc.touchMove(a.getInt(0), x, y) } }
