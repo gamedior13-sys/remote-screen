@@ -1,0 +1,49 @@
+name: Build PC agent
+
+on:
+  push:
+    paths:
+      - "pc-agent/**"
+      - ".github/workflows/build-pc.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-pc
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install deps
+        working-directory: pc-agent
+        run: npm install
+
+      - name: Build portable exe
+        working-directory: pc-agent
+        run: npm run dist
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: remote-screen-pc
+          path: pc-agent/dist/remote-screen-pc.exe
+
+      # Publish the .exe as a fixed "pc" release so phones/users download it directly:
+      # https://github.com/<owner>/<repo>/releases/download/pc/remote-screen-pc.exe
+      - name: Publish to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create pc --title "Remote Screen PC" --notes "Remote Screen PC (Windows)" 2>/dev/null || true
+          gh release upload pc pc-agent/dist/remote-screen-pc.exe --clobber
