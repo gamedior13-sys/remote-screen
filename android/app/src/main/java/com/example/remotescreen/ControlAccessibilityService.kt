@@ -184,7 +184,7 @@ class ControlAccessibilityService : AccessibilityService() {
     // ================================================================ self-update helper
     // Only while our own updater asked for it (a few minutes): press "Install" in the package installer
     // and "Start now" in the screen-capture dialog, so a remote update needs nobody at the phone.
-    private val confirmWords = listOf("Bắt đầu ngay", "Start now", "Bắt đầu", "Start", "Cài đặt", "Install", "Cập nhật", "Update", "Tiếp tục", "Continue")
+    private val confirmWords = listOf("Bắt đầu ngay", "Start now", "Bắt đầu", "Start", "Chia sẻ màn hình", "Share screen", "Start sharing", "Cài đặt", "Install", "Cập nhật", "Update", "Tiếp tục", "Continue")
     private val dontAskWords = listOf("Không hiển thị lại", "Don't show again", "Do not show again")
     // Nhận diện lựa chọn trong ô xổ "phạm vi" của hộp thoại chia sẻ (Android 14+): dựa theo nội dung chữ,
     // vì mỗi hãng ghi khác nhau ("Toàn màn hình" / "Toàn bộ màn hình" / "Chia sẻ toàn bộ màn hình"...).
