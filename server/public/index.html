@@ -52,6 +52,7 @@
   #id { font-size: 24px; letter-spacing: .12em; font-variant-numeric: tabular-nums; font-weight: 600; text-align: center; }
   #id::placeholder { letter-spacing: .12em; }
   .pwbox { position: relative; }
+  .masked { -webkit-text-security: disc; text-security: disc; }
   .pwbox .inp { padding-right: 52px; }
   .pwbox .eye { position: absolute; right: 6px; top: 6px; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; color: var(--muted); }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -266,12 +267,12 @@
       <p class="sub">Nhập ID và mật khẩu hiển thị trong app Remote Screen trên máy Android.</p>
       <div class="field">
         <label for="id">ID thiết bị</label>
-        <input id="id" class="inp" inputmode="numeric" autocomplete="off" placeholder="Nhập ID" maxlength="11">
+        <input id="id" class="inp" inputmode="numeric" autocomplete="off" autocorrect="off" spellcheck="false" name="rs-device-code" data-lpignore="true" data-form-type="other" placeholder="Nhập ID" maxlength="11">
       </div>
       <div class="field">
         <label for="pw">Mật khẩu</label>
         <div class="pwbox">
-          <input id="pw" class="inp" type="password" autocomplete="off" placeholder="Nhập mật khẩu">
+          <input id="pw" class="inp masked" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="rs-device-pin" data-lpignore="true" data-form-type="other" placeholder="Nhập mật khẩu">
           <button class="eye" id="eye" aria-label="Hiện mật khẩu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
         </div>
       </div>
@@ -515,7 +516,7 @@
 
   // ---------- connect ----------
   $('#id').addEventListener('input', (e) => { const el = e.target; el.value = fmtId(el.value); });
-  $('#eye').addEventListener('click', () => { const p = $('#pw'); p.type = p.type === 'password' ? 'text' : 'password'; });
+  $('#eye').addEventListener('click', () => $('#pw').classList.toggle('masked'));
 
   function busy(on, label) {
     $('#go').disabled = on;
@@ -1715,6 +1716,16 @@
   // The page (or the iPhone home-screen app) must not keep reopening with an ID pre-filled:
   // consume the one-time parameters and clean the address.
   if (qid || qs.get('v')) { try { history.replaceState(null, '', location.pathname); } catch {} }
+  // Start with empty fields: the user picks the device. Clear again shortly after load because
+  // iOS / Android autofill and "restore previous page" can put an old value back in a moment later.
+  const clearFields = () => {
+    if (inSession || qid) return;
+    for (const el of [$('#id'), $('#pw')]) if (document.activeElement !== el && !el.dataset.touched) el.value = '';
+  };
+  for (const el of [$('#id'), $('#pw')]) el.addEventListener('keydown', () => { el.dataset.touched = '1'; });
+  $('#recent').addEventListener('click', () => { $('#id').dataset.touched = $('#pw').dataset.touched = '1'; }, true);
+  clearFields(); setTimeout(clearFields, 400); setTimeout(clearFields, 1500);
+  window.addEventListener('pageshow', (e) => { if (e.persisted && !inSession) { $('#id').dataset.touched = $('#pw').dataset.touched = ''; clearFields(); } });
   if (qid) {
     $('#id').value = fmtId(qid);
     // after "Tải lại trang" during a session: reconnect straight away with the saved password
