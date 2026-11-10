@@ -56,7 +56,7 @@
 <div class="ver" id="ver"></div>
 
 <script>
-const APP_VER = '1.0.1';
+const APP_VER = '1.1.0';
 const DEFAULT_SERVER = 'https://remote-screen-phong.onrender.com';
 document.getElementById('ver').textContent = 'v' + APP_VER;
 
@@ -208,17 +208,51 @@ function closePeer() {
 }
 
 function sendHello() {
-  dcSend({ t: 'hello', platform: 'windows', caps: ['mouse', 'keyboard', 'clipboard', 'file'], vname: 'PC ' + APP_VER, a11y: true });
+  dcSend({ t: 'hello', platform: 'windows', caps: ['mouse', 'keyboard'], vname: 'PC ' + APP_VER, a11y: true });
 }
 
-// Giai đoạn 1: nhận lệnh điều khiển nhưng chưa thực thi — vẫn ACK để phía web biết kênh thông.
-// Áp dụng mức chất lượng (độ phân giải/fps/bitrate) do web yêu cầu.
+// Giai đoạn 2: thực thi lệnh điều khiển qua api.exec (main.js bắn SendInput).
+// Web gửi kèm seq và gửi lại nếu không thấy ACK trong 400ms — nên phải dedupe theo seq.
+const seenSeq = new Set();
+let prevIme = '';
 function onCtrl(m) {
   if (!m || typeof m !== 'object') return;
   if (m.t === 'ack') return;
-  if (m.seq) dcSend({ t: 'ack', seq: m.seq });
-  if (m.t === 'quality') applyQuality(m);
-  // mouse/keyboard/clipboard/file: thêm ở giai đoạn sau.
+  if (m.seq) {
+    if (seenSeq.has(m.seq)) { dcSend({ t: 'ack', seq: m.seq }); return; }
+    seenSeq.add(m.seq);
+    if (seenSeq.size > 256) seenSeq.delete(seenSeq.values().next().value);
+    dcSend({ t: 'ack', seq: m.seq });
+  }
+  switch (m.t) {
+    case 'quality': applyQuality(m); break;
+    case 'tap': api.exec({ op: 'tap', x: m.x, y: m.y, d: m.d }); break;
+    case 'swipe': api.exec({ op: 'swipe', x1: m.x1, y1: m.y1, x2: m.x2, y2: m.y2, d: m.d }); break;
+    case 'td': api.exec({ op: 'down', i: m.i, x: m.x, y: m.y }); break;
+    case 'tm': (m.p || []).forEach((pt) => { if (Array.isArray(pt) && pt.length >= 3) api.exec({ op: 'move', i: pt[0], x: pt[1], y: pt[2] }); }); break;
+    case 'tu': api.exec({ op: 'up', i: m.i }); break;
+    case 'key': api.exec({ op: 'key', k: m.k }); break;
+    case 'text':
+      prevIme = '';
+      if (m.s) api.exec({ op: 'text', s: String(m.s) });
+      break;
+    case 'settext': {
+      // IME live: web gửi NỘI DUNG ĐẦY ĐỦ của ô chữ sau mỗi lần gõ — tính diff
+      // so với lần trước rồi chỉ gõ phần thêm / xoá phần bớt, giống máy Android.
+      const cur = String(m.s || '');
+      const a = prevIme;
+      const mn = Math.min(a.length, cur.length);
+      let p = 0; while (p < mn && a[p] === cur[p]) p++;
+      let sfx = 0; while (sfx < mn - p && a[a.length - 1 - sfx] === cur[cur.length - 1 - sfx]) sfx++;
+      const del = a.length - p - sfx;
+      const ins = cur.slice(p, cur.length - sfx);
+      if (del > 0) api.exec({ op: 'del', n: del });
+      if (ins) api.exec({ op: 'text', s: ins });
+      prevIme = cur;
+      break;
+    }
+    default: break; // watch / macro / tc / keep_screen / update_app...: riêng Android, bỏ qua.
+  }
 }
 
 async function applyQuality(q) {
