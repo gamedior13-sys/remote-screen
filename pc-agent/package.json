@@ -1,6 +1,6 @@
 {
   "name": "remote-screen-pc",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Remote Screen - PC partner (Windows)",
   "main": "main.js",
   "scripts": {
