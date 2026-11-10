@@ -742,6 +742,9 @@ class ShareService : Service() {
         try { factory?.dispose() } catch (_: Throwable) {}
         try { eglBase?.release() } catch (_: Throwable) {}
         stopForeground(STOP_FOREGROUND_REMOVE)
+        // Nếu bật "tự đánh thức": quay lại chế độ chờ để lần sau còn gọi dậy được từ xa.
+        running = false
+        try { StandbyService.startIfEnabled(applicationContext) } catch (_: Throwable) {}
         stopSelf()
     }
 

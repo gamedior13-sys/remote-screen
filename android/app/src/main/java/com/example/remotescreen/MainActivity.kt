@@ -66,6 +66,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var updText: TextView
     private lateinit var updBtn: Button
     private var updLatest: Long = 0
+    private lateinit var awBtn: Button
+    private lateinit var awText: TextView
     private lateinit var startBtn: Button
     private lateinit var advanced: LinearLayout
     private val prefs by lazy { getSharedPreferences("cfg", Context.MODE_PRIVATE) }
@@ -252,6 +254,18 @@ class MainActivity : ComponentActivity() {
         root.addView(label("Khi đang chia sẻ, thanh thông báo luôn hiện \"Đang chia sẻ màn hình\" kèm nút Dừng.", 12f).apply {
             gravity = Gravity.CENTER; setPadding(dp(8), dp(14), dp(8), 0)
         })
+
+        // ---- auto-wake: stay reachable and start sharing by itself when someone connects
+        root.addView(label("TỰ ĐÁNH THỨC TỪ XA", 12f, MUTED, true).apply { letterSpacing = 0.08f; setPadding(dp(4), dp(26), 0, dp(8)) })
+        val awCard = card()
+        awText = label("Khi bật: có người nhập ID là máy tự mở app và chia sẻ, không cần bấm. Cần quyền Trợ năng + Hiện trên ứng dụng khác + bỏ tối ưu pin.", 12.5f)
+        awCard.addView(awText)
+        awBtn = Button(this).apply {
+            isAllCaps = false; textSize = 15f; setTypeface(typeface, Typeface.BOLD); stateListAnimator = null
+            setOnClickListener { toggleAutoWake() }
+        }
+        awCard.addView(awBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(12) })
+        root.addView(awCard, lp(0))
 
         // ---- this phone can also control other devices (Android / PC)
         root.addView(label("ĐIỀU KHIỂN MÁY KHÁC", 12f, MUTED, true).apply { letterSpacing = 0.08f; setPadding(dp(4), dp(26), 0, dp(8)) })
@@ -460,11 +474,68 @@ class MainActivity : ComponentActivity() {
 
         a11yRow.visibility = if (ControlAccessibilityService.instance != null) View.GONE else View.VISIBLE
         battRow.visibility = if (batteryOk()) View.GONE else View.VISIBLE
+        renderAutoWake()
         renderMacros()
 
         startBtn.text = if (running) "Dừng chia sẻ" else "Bắt đầu chia sẻ màn hình"
         startBtn.background = if (running) rounded(0x33FF5D6C, 16, BAD) else gradient(16)
         startBtn.setTextColor(if (running) BAD else Color.WHITE)
+    }
+
+    private fun autoWakeOn() = prefs.getBoolean("autoShare", false)
+
+    private fun canOverlay() = Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this)
+
+    private fun renderAutoWake() {
+        if (!::awBtn.isInitialized) return
+        val on = autoWakeOn()
+        awBtn.text = if (on) "Đang bật · bấm để tắt" else "Bật tự đánh thức"
+        awBtn.background = if (on) rounded(0x3322C55E, 14, OK) else rounded(CARD2, 14, LINE)
+        awBtn.setTextColor(if (on) OK else TEXT)
+        if (on) {
+            val miss = ArrayList<String>()
+            if (ControlAccessibilityService.instance == null) miss.add("Trợ năng")
+            if (!canOverlay()) miss.add("Hiện trên ứng dụng khác")
+            if (!batteryOk()) miss.add("bỏ tối ưu pin")
+            awText.text = if (miss.isEmpty()) "Đang bật. Máy sẽ tự mở app + chia sẻ khi có người nhập ID."
+                else "Đang bật nhưng còn thiếu quyền: ${miss.joinToString(", ")}. Bấm nút để cấp nốt."
+            awText.setTextColor(if (miss.isEmpty()) OK else WARN)
+            if (!ShareService.running && !StandbyService.running) StandbyService.startIfEnabled(this)
+        } else {
+            awText.text = "Khi bật: có người nhập ID là máy tự mở app và chia sẻ, không cần bấm. Cần quyền Trợ năng + Hiện trên ứng dụng khác + bỏ tối ưu pin."
+            awText.setTextColor(MUTED)
+        }
+    }
+
+    private fun toggleAutoWake() {
+        if (autoWakeOn()) {
+            // Need all three permissions still? re-request the missing one; only turn OFF when fully set up.
+            if (ControlAccessibilityService.instance == null) { openA11y(); return }
+            if (!canOverlay()) { requestOverlay(); return }
+            if (!batteryOk()) { askBattery(); return }
+            prefs.edit().putBoolean("autoShare", false).apply()
+            startService(Intent(this, StandbyService::class.java).setAction(StandbyService.ACTION_STOP))
+            toast("Đã tắt tự đánh thức")
+        } else {
+            if (passwordEdit.text.length < 6) { passwordEdit.error = "Nhập mật khẩu trước"; passwordEdit.requestFocus(); return }
+            prefs.edit().putString("password", passwordEdit.text.toString()).putBoolean("autoShare", true).apply()
+            when {
+                ControlAccessibilityService.instance == null -> { toast("Bật quyền Trợ năng cho Remote Screen"); openA11y() }
+                !canOverlay() -> { toast("Cho phép Hiện trên ứng dụng khác"); requestOverlay() }
+                !batteryOk() -> askBattery()
+                else -> toast("Đã bật. Máy luôn sẵn sàng được đánh thức.")
+            }
+            StandbyService.startIfEnabled(this)
+        }
+        renderAutoWake()
+    }
+
+    private fun requestOverlay() {
+        try {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        } catch (_: Throwable) {
+            try { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)) } catch (_: Throwable) {}
+        }
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()

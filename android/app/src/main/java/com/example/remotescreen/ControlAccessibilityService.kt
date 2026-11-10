@@ -186,6 +186,8 @@ class ControlAccessibilityService : AccessibilityService() {
     // and "Start now" in the screen-capture dialog, so a remote update needs nobody at the phone.
     private val confirmWords = listOf("Bắt đầu ngay", "Start now", "Cài đặt", "Install", "Cập nhật", "Update", "Tiếp tục", "Continue")
     private val dontAskWords = listOf("Không hiển thị lại", "Don't show again", "Do not show again")
+    // Android 14+ hỏi "Toàn bộ màn hình" hay "Một ứng dụng" — chọn toàn bộ trước khi bấm Bắt đầu.
+    private val fullScreenWords = listOf("Toàn bộ màn hình", "Entire screen", "Cả màn hình", "Full screen", "Màn hình")
 
     private fun maybeAutoConfirm(pkg: String?) {
         if (pkg == null || !Updater.autoConfirmActive(this)) return
@@ -200,6 +202,13 @@ class ControlAccessibilityService : AccessibilityService() {
         if (!(pkg.contains("packageinstaller") || pkg == "com.android.systemui" || pkg.contains("permissioncontroller"))) return
         for (w in dontAskWords) for (n in root.findAccessibilityNodeInfosByText(w)) {
             if (n.isCheckable && !n.isChecked) n.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        }
+        // Chọn "Toàn bộ màn hình" nếu màn hình chia sẻ hỏi phạm vi (best-effort, bỏ qua nếu không có).
+        if (pkg == "com.android.systemui") for (w in fullScreenWords) {
+            val hit = root.findAccessibilityNodeInfosByText(w).firstOrNull() ?: continue
+            var c: AccessibilityNodeInfo? = hit
+            while (c != null && !c.isClickable) c = c.parent
+            if (c != null && c.isEnabled) { c.performAction(AccessibilityNodeInfo.ACTION_CLICK); break }
         }
         for (w in confirmWords) for (n in root.findAccessibilityNodeInfosByText(w)) {
             var c: AccessibilityNodeInfo? = n

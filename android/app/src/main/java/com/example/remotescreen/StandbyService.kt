@@ -1,0 +1,187 @@
+package com.example.remotescreen
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
+import android.os.IBinder
+import android.os.PowerManager
+import android.util.Log
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
+
+/**
+ * Lightweight "standby" presence: keeps ONE signaling socket registered (standby=true) so the server
+ * can wake this device on demand — without capturing the screen. When a controller asks for this ID,
+ * the server sends {type:"wake"}; we then turn the screen on and launch MainActivity in auto-start
+ * mode, which requests screen capture and lets the accessibility service confirm the system dialog.
+ * It yields to ShareService: whenever real sharing is running, standby stops itself.
+ */
+class StandbyService : Service() {
+
+    companion object {
+        const val ACTION_STOP = "com.example.remotescreen.STANDBY_STOP"
+        private const val TAG = "StandbyService"
+        private const val CHANNEL = "standby"
+
+        @Volatile var running = false
+            private set
+
+        /** Start standby if the owner enabled auto-wake and a password is set. */
+        fun startIfEnabled(ctx: Context) {
+            val p = ctx.getSharedPreferences("cfg", Context.MODE_PRIVATE)
+            if (!p.getBoolean("autoShare", false)) return
+            if ((p.getString("password", "") ?: "").length < 6) return
+            if (ShareService.running) return
+            try { ctx.startForegroundService(Intent(ctx, StandbyService::class.java)) } catch (t: Throwable) { Log.w(TAG, "start", t) }
+        }
+    }
+
+    private val http = OkHttpClient.Builder()
+        .pingInterval(30, TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(70, TimeUnit.SECONDS)
+        .build()
+    private var ws: WebSocket? = null
+    private var stopping = false
+    private var lastWake = 0L
+
+    private fun prefs() = getSharedPreferences("cfg", Context.MODE_PRIVATE)
+    private fun server() = (prefs().getString("server2", "") ?: "").trim().trimEnd('/').ifEmpty { MainActivity.DEFAULT_SERVER }
+    private fun deviceId() = prefs().getString("id", "") ?: ""
+    private fun password() = prefs().getString("password", "") ?: ""
+    private fun wsUrl(): String {
+        val base = server().replaceFirst("http://", "ws://").replaceFirst("https://", "wss://")
+        return "$base/ws"
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) { shutdown(); return START_NOT_STICKY }
+        if (running) return START_STICKY
+        // Nothing to do if sharing is already live, or the owner turned auto-wake off.
+        if (ShareService.running || !prefs().getBoolean("autoShare", false) || password().length < 6 || deviceId().isBlank()) {
+            stopSelf(); return START_NOT_STICKY
+        }
+        startForegroundNotification()
+        running = true
+        connect()
+        return START_STICKY
+    }
+
+    private fun startForegroundNotification() {
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= 26) {
+            nm.createNotificationChannel(NotificationChannel(CHANNEL, "Sẵn sàng điều khiển", NotificationManager.IMPORTANCE_MIN))
+        }
+        val stop = PendingIntent.getService(
+            this, 0, Intent(this, StandbyService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val open = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val n: Notification = Notification.Builder(this, CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_menu_view)
+            .setContentTitle("Remote Screen: sẵn sàng")
+            .setContentText("Chờ lệnh đánh thức — ID ${deviceId()}")
+            .setContentIntent(open)
+            .setOngoing(true)
+            .addAction(Notification.Action.Builder(null, "Tắt sẵn sàng", stop).build())
+            .build()
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(2, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(2, n)
+        }
+    }
+
+    private fun connect() {
+        if (stopping) return
+        if (ShareService.running) { shutdown(); return }   // real sharing owns the ID now
+        ws = http.newWebSocket(Request.Builder().url(wsUrl()).build(), object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                webSocket.send(JSONObject().put("type", "register").put("id", deviceId()).put("password", password()).put("standby", true).toString())
+                thread(name = "standby-ka") {
+                    while (!stopping) {
+                        try { Thread.sleep(60_000) } catch (_: InterruptedException) { break }
+                        if (stopping || ws !== webSocket) break
+                        try { webSocket.send("{\"type\":\"ka\"}") } catch (_: Throwable) { break }
+                    }
+                }
+            }
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                try {
+                    if (JSONObject(text).optString("type") == "wake") doWake()
+                } catch (t: Throwable) { Log.w(TAG, "msg", t) }
+            }
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { retryLater() }
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { retryLater() }
+        })
+    }
+
+    private fun retryLater() {
+        if (stopping) return
+        thread(name = "standby-retry") {
+            Thread.sleep(5000)
+            if (stopping) return@thread
+            if (ShareService.running) { shutdown(); return@thread }
+            connect()
+        }
+    }
+
+    /** A controller asked for this device: wake the screen and launch the capture flow. */
+    private fun doWake() {
+        val now = System.currentTimeMillis()
+        if (ShareService.running || now - lastWake < 8000) return
+        lastWake = now
+        prefs().edit().putBoolean("autostart", true).apply()
+        Updater.allowAutoConfirm(this, 3 * 60_000L)
+        // Turn the screen on (cannot bypass a PIN/pattern lock — Android forbids that).
+        try {
+            val pm = getSystemService(POWER_SERVICE) as PowerManager
+            @Suppress("DEPRECATION")
+            val wl = pm.newWakeLock(
+                PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
+                "remotescreen:wake"
+            )
+            wl.acquire(8000)
+        } catch (t: Throwable) { Log.w(TAG, "wake lock", t) }
+        try {
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                    .putExtra("autostart", true)
+            )
+        } catch (t: Throwable) { Log.w(TAG, "launch", t) }
+    }
+
+    private fun shutdown() {
+        if (stopping) { stopSelf(); return }
+        stopping = true
+        running = false
+        try { ws?.close(1000, "bye") } catch (_: Throwable) {}
+        try { ws?.cancel() } catch (_: Throwable) {}
+        ws = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    override fun onDestroy() {
+        if (!stopping) { stopping = true; running = false; try { ws?.cancel() } catch (_: Throwable) {} }
+        super.onDestroy()
+    }
+}
