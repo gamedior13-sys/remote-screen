@@ -385,8 +385,8 @@
     <div class="seg" id="qseg">
       <button data-q="eco">Tiết kiệm<small>15 fps</small></button>
       <button data-q="bal">Cân bằng<small>30 fps</small></button>
-      <button data-q="hi">Mượt<small>60 fps · 960p</small></button>
-      <button data-q="max">Siêu mượt<small>60 fps · 720p</small></button>
+      <button data-q="hi">Nét<small>60 fps · sắc nét</small></button>
+      <button data-q="max">Mượt<small>60 fps · nhẹ</small></button>
     </div>
     <div class="mnote" id="qnote"></div>
     <h4>Xoay hình</h4>
@@ -424,10 +424,10 @@
   const QUALITY = {
     eco: { fps: 15, long: 720, br: 700000, label: 'Tiết kiệm' },
     bal: { fps: 30, long: 1280, br: 2500000, label: 'Cân bằng' },
-    hi: { fps: 60, long: 960, br: 6000000, label: 'Mượt' },
-    max: { fps: 60, long: 720, br: 3000000, label: 'Siêu mượt' },
+    hi: { fps: 60, long: 1600, br: 8000000, label: 'Nét' },
+    max: { fps: 60, long: 720, br: 3000000, label: 'Mượt' },
   };
-  const RECONNECT_MS = 120000;
+  const RECONNECT_MS = 600000;   // kiên nhẫn 10 phút trước khi bỏ cuộc
   let reconnectLimit = RECONNECT_MS;
 
   let ws, pc, dc, statsTimer, usageTimer, iceServers = [], current = null;
@@ -625,7 +625,7 @@
     }
     if (m.type === 'connected') {
       if (!inSession) { remember(current.id, current.password); openSession(); }
-      reconnecting = false; reconnectSince = 0; reconnectLimit = RECONNECT_MS;
+      reconnecting = false; reconnectSince = 0; reconnectLimit = RECONNECT_MS; rxBytes = 0; rxAt = 0;
       showOverlay('Đang thiết lập kết nối…');
       createPeer();
       return;
@@ -683,7 +683,7 @@
   function scheduleReconnect(text) {
     if (!inSession) return;
     if (!reconnectSince) reconnectSince = Date.now();
-    if (Date.now() - reconnectSince > reconnectLimit) return endSession('Không kết nối lại được. Kiểm tra máy Android còn đang chia sẻ không.');
+    if (Date.now() - reconnectSince > reconnectLimit) return endSession('Không kết nối lại được. Mở app Remote Screen trên máy Android, kiểm tra còn đang chia sẻ không rồi thử lại.');
     reconnecting = true;
     closePeer();
     $('#dot').classList.remove('ok');
@@ -759,6 +759,7 @@
     const q = pref.get('quality2', '');
     if (q && QUALITY[q]) return q;
     const viaMetered = relay && turnPick && relayOf(turnPick.url) && relayOf(turnPick.url).name === 'Metered';
+    // Kết nối thẳng (xanh): để NÉT full độ phân giải. Qua máy trung chuyển: nhẹ hơn cho đỡ trễ.
     return viaMetered ? 'eco' : relay ? 'max' : 'hi';
   }
   function sendQuality() {
@@ -769,7 +770,7 @@
   }
 
   // ---------- stats & TURN quota ----------
-  let last = { bytes: 0, t: 0 }, pathInfo = null;
+  let last = { bytes: 0, t: 0 }, pathInfo = null, rxBytes = 0, rxAt = 0;
   let laidW = 0, laidH = 0, laidBox = '';
   function unscroll() {
     // iOS Safari often leaves the page scrolled after the keyboard closes: the picture stays put but
@@ -803,6 +804,12 @@
     if (bytes != null && last.t && bytes >= last.bytes) {
       lastKbps = Math.round(((bytes - last.bytes) * 8) / (now - last.t));
       if (relay) sessionRelayBytes += bytes - last.bytes;
+    }
+    if (bytes != null) {
+      if (bytes > rxBytes) { rxBytes = bytes; rxAt = now; }
+      else if (pc && pc.connectionState === 'connected' && video.videoWidth && rxAt && now - rxAt > 7000) {
+        rxAt = now; return scheduleReconnect('Hình bị đứng, đang kết nối lại…');
+      }
     }
     if (bytes != null) last = { bytes, t: now };
     if (isRelay !== null && isRelay !== relay) {
