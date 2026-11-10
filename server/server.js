@@ -288,7 +288,9 @@ wss.on('connection', (ws, req) => {
       if (!id) id = newId();
       ws.role = 'device';
       ws.deviceId = id;
-      devices.set(id, { ws, pwHash, controller: null });
+      // Giữ controller cũ khi máy đăng ký lại cùng mật khẩu, để nối lại mượt sau khi rớt mạng.
+      const keepController = (existing && existing.ws && existing.controller) || null;
+      devices.set(id, { ws, pwHash, controller: keepController, standby: !!m.standby, lastWake: 0 });
       return send(ws, { type: 'registered', id });
     }
 
@@ -300,6 +302,12 @@ wss.on('connection', (ws, req) => {
         // No lock-out any more; a short pause per wrong attempt still makes guessing impractical.
         // Same message for unknown id and wrong password: do not leak which IDs exist.
         return setTimeout(() => send(ws, { type: 'error', code: 'denied', message: 'Wrong ID or password' }), 1000);
+      }
+      if (dev.standby) {
+        // Máy đang ở chế độ chờ, chưa chia sẻ: đánh thức nó, bảo controller chờ rồi thử lại.
+        const nowT = Date.now();
+        if (!dev.lastWake || nowT - dev.lastWake > 8000) { dev.lastWake = nowT; send(dev.ws, { type: 'wake' }); }
+        return send(ws, { type: 'error', code: 'waking', message: 'Waking device' });
       }
       if (dev.controller && dev.controller !== ws) {
         // A newer session with the right password takes over (e.g. the same phone reconnecting
