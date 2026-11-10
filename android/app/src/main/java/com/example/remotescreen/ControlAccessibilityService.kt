@@ -186,33 +186,55 @@ class ControlAccessibilityService : AccessibilityService() {
     // and "Start now" in the screen-capture dialog, so a remote update needs nobody at the phone.
     private val confirmWords = listOf("Bắt đầu ngay", "Start now", "Bắt đầu", "Start", "Cài đặt", "Install", "Cập nhật", "Update", "Tiếp tục", "Continue")
     private val dontAskWords = listOf("Không hiển thị lại", "Don't show again", "Do not show again")
-    // Nhãn của hai lựa chọn trong ô xổ "phạm vi" của hộp thoại chia sẻ màn hình (Android 14+).
-    private val entireWords = listOf("Toàn bộ màn hình", "Entire screen", "Cả màn hình", "Full screen")
-    private val singleWords = listOf("Một ứng dụng", "A single app", "Single app")
+    // Nhận diện lựa chọn trong ô xổ "phạm vi" của hộp thoại chia sẻ (Android 14+): dựa theo nội dung chữ,
+    // vì mỗi hãng ghi khác nhau ("Toàn màn hình" / "Toàn bộ màn hình" / "Chia sẻ toàn bộ màn hình"...).
+    private fun isEntireText(t: String): Boolean {
+        val s = t.lowercase()
+        return (s.contains("toàn") && s.contains("màn hình")) ||
+               ((s.contains("entire") || s.contains("full")) && s.contains("screen"))
+    }
+    private fun isSingleText(t: String): Boolean {
+        val s = t.lowercase()
+        return (s.contains("một") && s.contains("ứng dụng")) ||
+               (s.contains("single") && s.contains("app"))
+    }
 
     private fun maybeAutoConfirm(pkg: String?) {
         if (pkg == null || !Updater.autoConfirmActive(this)) return
         if (!(pkg.contains("packageinstaller") || pkg == "com.android.systemui" || pkg.contains("permissioncontroller"))) return
         // Hộp thoại chia sẻ của Samsung cần tới 2 bước (mở ô xổ → chọn toàn màn hình → bấm Bắt đầu),
         // mỗi lần confirmNow chỉ làm MỘT bước nên lên lịch nhiều mốc để đi hết chuỗi.
-        for (d in longArrayOf(250, 700, 1300, 2000, 2800, 3800)) main.postDelayed({ confirmNow() }, d)
+        for (d in longArrayOf(250, 700, 1300, 2000, 2800, 3800, 5000, 6500)) main.postDelayed({ confirmNow() }, d)
     }
 
-    /** Tìm node mang ĐÚNG một trong các nhãn (so khớp chính xác, tránh khớp chuỗi con như "Màn hình"). */
-    private fun firstByText(root: AccessibilityNodeInfo, words: List<String>): AccessibilityNodeInfo? {
-        for (w in words) {
-            for (n in root.findAccessibilityNodeInfosByText(w)) {
-                if (n.text?.toString()?.trim() == w) return n
-            }
+    /** Node bấm được: chính nó hoặc cha trong vài cấp (để bỏ qua đoạn mô tả không bấm được). */
+    private fun clickableTarget(node: AccessibilityNodeInfo?, maxUp: Int = 2): AccessibilityNodeInfo? {
+        var c = node; var up = 0
+        while (c != null && up <= maxUp) {
+            if (c.isClickable && c.isEnabled) return c
+            c = c.parent; up++
         }
         return null
     }
 
-    private fun clickSelfOrParent(node: AccessibilityNodeInfo): Boolean {
-        var c: AccessibilityNodeInfo? = node
-        while (c != null && !c.isClickable) c = c.parent
-        if (c != null && c.isEnabled) return c.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        return false
+    /** Gốc của MỌI cửa sổ đang hiện — danh sách ô xổ mở ra ở cửa sổ popup riêng, không nằm trong cửa sổ active. */
+    private fun allRoots(): List<AccessibilityNodeInfo> {
+        val roots = ArrayList<AccessibilityNodeInfo>()
+        try { rootInActiveWindow?.let { roots.add(it) } } catch (_: Throwable) {}
+        try { for (w in windows) { try { w.root?.let { roots.add(it) } } catch (_: Throwable) {} } } catch (_: Throwable) {}
+        return roots
+    }
+
+    /** Tìm một lựa chọn bấm được khớp [match] trên tất cả cửa sổ (nhãn trong ô xổ/popup). */
+    private fun findClickableOption(roots: List<AccessibilityNodeInfo>, searchKey: String, match: (String) -> Boolean): AccessibilityNodeInfo? {
+        for (r in roots) {
+            val hits = try { r.findAccessibilityNodeInfosByText(searchKey) } catch (_: Throwable) { emptyList<AccessibilityNodeInfo>() }
+            for (n in hits) {
+                val t = n.text?.toString()?.trim() ?: continue
+                if (match(t)) clickableTarget(n, 2)?.let { return it }
+            }
+        }
+        return null
     }
 
     private fun confirmNow() {
@@ -223,17 +245,17 @@ class ControlAccessibilityService : AccessibilityService() {
         for (w in dontAskWords) for (n in root.findAccessibilityNodeInfosByText(w)) {
             if (n.isCheckable && !n.isChecked) n.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         }
-        // Hộp thoại chia sẻ màn hình: máy Samsung có ô xổ "Một ứng dụng / Toàn bộ màn hình".
-        // Mỗi lần chỉ làm ĐÚNG MỘT việc để không bấm loạn xạ.
+        // Hộp thoại chia sẻ màn hình: máy Samsung có ô xổ "Một ứng dụng / Toàn (bộ) màn hình".
+        // Danh sách xổ ra nằm ở cửa sổ popup riêng nên phải dò qua TẤT CẢ cửa sổ; mỗi nhịp làm ĐÚNG MỘT việc.
         if (pkg == "com.android.systemui") {
-            val entire = firstByText(root, entireWords)
-            val single = firstByText(root, singleWords)
+            val roots = allRoots()
+            val entire = findClickableOption(roots, "màn hình") { isEntireText(it) }
+                ?: findClickableOption(roots, "screen") { isEntireText(it) }
+            val single = findClickableOption(roots, "ứng dụng") { isSingleText(it) }
+                ?: findClickableOption(roots, "app") { isSingleText(it) }
             when {
-                // Ô xổ đang mở (thấy cả hai lựa chọn) → chọn "Toàn bộ màn hình".
-                entire != null && single != null -> { clickSelfOrParent(entire); return }
-                // Ô xổ đang đóng ở "Một ứng dụng" → bấm để mở danh sách.
-                single != null && entire == null -> { clickSelfOrParent(single); return }
-                // Đã ở "Toàn bộ màn hình" (hoặc máy không có ô xổ) → rơi xuống dưới để bấm "Bắt đầu".
+                entire != null && single != null -> { entire.performAction(AccessibilityNodeInfo.ACTION_CLICK); return }
+                single != null && entire == null -> { single.performAction(AccessibilityNodeInfo.ACTION_CLICK); return }
             }
         }
         for (w in confirmWords) for (n in root.findAccessibilityNodeInfosByText(w)) {
