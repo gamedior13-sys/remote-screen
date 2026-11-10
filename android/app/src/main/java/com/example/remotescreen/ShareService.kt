@@ -69,7 +69,7 @@ class ShareService : Service() {
         const val EXTRA_PASSWORD = "password"
         private const val TAG = "ShareService"
         private const val CHANNEL = "share"
-        private const val MAX_LONG_SIDE = 1280
+        private const val MAX_LONG_SIDE = 1600
         private const val FPS = 30
         private const val MAX_BITRATE_BPS = 4_000_000
 
@@ -122,6 +122,7 @@ class ShareService : Service() {
     private var screenLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var netCallback: ConnectivityManager.NetworkCallback? = null
+    @Volatile private var haveNet = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -204,9 +205,13 @@ class ShareService : Service() {
             val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
             netCallback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    // Network came back (or switched Wi-Fi <-> 4G): reconnect at once instead of waiting for timeouts.
-                    if (!stopping && state == STATE_CONNECTING) { try { ws?.cancel() } catch (_: Throwable) {} }
+                    // Mạng vừa có lại / đổi Wi-Fi <-> 4G: socket cũ có thể đã chết âm thầm (state vẫn tưởng đang nối).
+                    // Luôn đóng socket hiện tại để đăng ký lại ngay trên mạng mới, trừ lần mạng đầu tiên.
+                    if (stopping) return
+                    if (haveNet) { try { ws?.cancel() } catch (_: Throwable) {} }
+                    haveNet = true
                 }
+                override fun onLost(network: Network) { /* chờ onAvailable của mạng kế tiếp */ }
             }.also { cm.registerDefaultNetworkCallback(it) }
         } catch (t: Throwable) { Log.w(TAG, "net cb", t) }
     }
@@ -525,8 +530,11 @@ class ShareService : Service() {
         return list
     }
 
+    private var peerGen = 0
+
     private fun startPeer(picked: JSONArray? = null) {
         closePeer()
+        val gen = ++peerGen
         // The controller measured which TURN relay is closest: use the same one (lowest ping).
         val pickedList = try { picked?.let { parseIce(it) } } catch (_: Throwable) { null }
         if (pickedList.isNullOrEmpty()) fetchIceServers()  // TURN credentials may be short-lived: refresh them for every session
@@ -547,7 +555,13 @@ class ShareService : Service() {
                     )
                 )
             }
-            override fun onConnectionChange(s: PeerConnection.PeerConnectionState) { Log.i(TAG, "pc state $s") }
+            override fun onConnectionChange(s: PeerConnection.PeerConnectionState) {
+                Log.i(TAG, "pc state $s")
+                if (s == PeerConnection.PeerConnectionState.FAILED || s == PeerConnection.PeerConnectionState.CLOSED) {
+                    // Đóng peer ở luồng khác (không dispose ngay trong callback của chính nó) rồi chờ controller nối lại.
+                    mainH.post { if (gen == peerGen) { closePeer(); state = STATE_READY } }
+                }
+            }
             override fun onSignalingChange(s: PeerConnection.SignalingState?) {}
             override fun onIceConnectionChange(s: PeerConnection.IceConnectionState?) {}
             override fun onIceConnectionReceivingChange(b: Boolean) {}
