@@ -1,0 +1,28 @@
+{
+  "name": "remote-screen-pc",
+  "version": "1.0.0",
+  "description": "Remote Screen - PC partner (Windows)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64"
+  },
+  "author": "Remote Screen",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "33.3.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "com.remotescreen.pc",
+    "productName": "Remote Screen PC",
+    "files": ["main.js", "preload.js", "index.html"],
+    "win": {
+      "target": [{ "target": "portable", "arch": ["x64"] }]
+    },
+    "portable": {
+      "artifactName": "remote-screen-pc.exe"
+    },
+    "compression": "maximum"
+  }
+}
