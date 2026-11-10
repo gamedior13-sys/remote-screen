@@ -56,7 +56,7 @@
 <div class="ver" id="ver"></div>
 
 <script>
-const APP_VER = '1.0.0';
+const APP_VER = '1.0.1';
 const DEFAULT_SERVER = 'https://remote-screen-phong.onrender.com';
 document.getElementById('ver').textContent = 'v' + APP_VER;
 
@@ -159,14 +159,26 @@ async function startPeer(ice) {
   closePeer();
   status('Điện thoại đang kết nối…', 'warn');
   let iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
-  if (ice) iceServers.push(ice);
+  // The server sends the picked relay as an ARRAY of ice servers (see pickedIce());
+  // older builds may send a single entry — accept both shapes.
+  if (Array.isArray(ice) && ice.length) iceServers = ice;
+  else if (ice && ice.urls) iceServers = [{ urls: 'stun:stun.l.google.com:19302' }, ice];
+  else if (ice && ice.url) iceServers = [{ urls: 'stun:stun.l.google.com:19302' },
+    { urls: ice.url, username: ice.username, credential: ice.credential }];
   else {
     try {
       const cfg = await (await fetch(current.server.replace(/\/+$/, '') + '/config', { cache: 'no-store' })).json();
       if (cfg && cfg.iceServers) iceServers = cfg.iceServers;
     } catch (_) {}
   }
-  const me = pc = new RTCPeerConnection({ iceServers });
+  iceServers = iceServers.filter((s) => s && (s.urls || s.url));
+  let me;
+  try {
+    me = pc = new RTCPeerConnection({ iceServers });
+  } catch (e) {
+    status('Lỗi cấu hình kết nối: ' + (e && e.message ? e.message : e), 'err');
+    return;
+  }
   dc = pc.createDataChannel('ctrl');
   dc.onopen = () => sendHello();
   dc.onmessage = (ev) => { try { onCtrl(JSON.parse(ev.data)); } catch (_) {} };
