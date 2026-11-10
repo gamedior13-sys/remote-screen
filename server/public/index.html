@@ -431,7 +431,7 @@
   let reconnectLimit = RECONNECT_MS;
 
   let ws, pc, dc, statsTimer, usageTimer, iceServers = [], current = null;
-  let inSession = false, reconnecting = false, reconnectSince = 0, retryTimer = null, discTimer = null;
+  let inSession = false, reconnecting = false, reconnectSince = 0, retryTimer = null, discTimer = null, wakeTries = 0;
   let relay = null, lastKbps = 0, usage = null, wakeLock = null, sessionRelayBytes = 0;
   let imeActive = false, sheetByIme = false, liveTimer = null;
 
@@ -599,7 +599,7 @@
     if (probeCfg) { setErr('Đang chọn máy chủ trung chuyển gần nhất…', true); await pickTurn(false); }
     clearTimeout(slow);
     setErr('');
-    current = { id, password };
+    current = { id, password }; wakeTries = 0;
     connect();
   }
 
@@ -619,13 +619,22 @@
   async function onSignaling(m) {
     if (m.type === 'error') {
       if (m.code === 'taken_over') return endSession('Máy này vừa được điều khiển từ một thiết bị/tab khác.');
+      if (m.code === 'waking') {   // máy đang ở chế độ chờ: đang được đánh thức, kiên nhẫn thử lại
+        wakeTries++;
+        if (wakeTries > 40) { busy(false); setErr('Máy Android chưa bật dậy được. Kiểm tra máy còn mở và đã bật "Tự đánh thức".'); return; }
+        if (!inSession) busy(true, 'Đang đánh thức máy…');
+        setErr('Đang đánh thức máy Android, chờ chút…', true);
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(() => { if (inSession) scheduleReconnect('Đang đánh thức máy Android…'); else connect(); }, 2500);
+        return;
+      }
       if (inSession) return scheduleReconnect(m.code === 'denied' ? 'Đang chờ máy Android kết nối lại…' : 'Đang kết nối lại…');
       const map = { denied: 'Sai ID hoặc mật khẩu, hoặc máy Android chưa bật chia sẻ', busy: 'Máy này đang được người khác điều khiển', rate_limited: 'Máy chủ đang bận, thử lại' };
       setErr(map[m.code] || m.message); busy(false); return;
     }
     if (m.type === 'connected') {
       if (!inSession) { remember(current.id, current.password); openSession(); }
-      reconnecting = false; reconnectSince = 0; reconnectLimit = RECONNECT_MS; rxBytes = 0; rxAt = 0;
+      reconnecting = false; reconnectSince = 0; reconnectLimit = RECONNECT_MS; rxBytes = 0; rxAt = 0; wakeTries = 0;
       showOverlay('Đang thiết lập kết nối…');
       createPeer();
       return;
