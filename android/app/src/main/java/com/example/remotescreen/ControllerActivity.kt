@@ -38,6 +38,9 @@ class ControllerActivity : ComponentActivity() {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.mediaPlaybackRequiresUserGesture = false
+            // Never let Android / Google autofill put an old ID or password into the connect form.
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            settings.saveFormData = false
             settings.setSupportZoom(false)
             settings.builtInZoomControls = false
             webChromeClient = object : WebChromeClient() {
