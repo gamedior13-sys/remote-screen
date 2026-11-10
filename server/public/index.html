@@ -1724,8 +1724,27 @@
   };
   for (const el of [$('#id'), $('#pw')]) el.addEventListener('keydown', () => { el.dataset.touched = '1'; });
   $('#recent').addEventListener('click', () => { $('#id').dataset.touched = $('#pw').dataset.touched = '1'; }, true);
-  clearFields(); setTimeout(clearFields, 400); setTimeout(clearFields, 1500);
-  window.addEventListener('pageshow', (e) => { if (e.persisted && !inSession) { $('#id').dataset.touched = $('#pw').dataset.touched = ''; clearFields(); } });
+  // The keyboard may only open when the user taps a field. iOS Safari can hand focus back to the
+  // last field by itself (first load, returning from another page/app, back/forward cache):
+  // drop any focus the user did not ask for.
+  let userTapped = false;
+  for (const el of [$('#id'), $('#pw')]) el.addEventListener('pointerdown', () => { userTapped = true; });
+  const dropAutoFocus = () => {
+    if (inSession || userTapped) return;
+    const a = document.activeElement;
+    if (a && (a === $('#id') || a === $('#pw'))) a.blur();
+  };
+  const settle = () => { clearFields(); dropAutoFocus(); };
+  settle(); setTimeout(settle, 400); setTimeout(settle, 1500);
+  window.addEventListener('pageshow', (e) => {
+    if (inSession) return;
+    userTapped = false;
+    if (e.persisted) $('#id').dataset.touched = $('#pw').dataset.touched = '';
+    settle(); setTimeout(settle, 400);
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !inSession) { userTapped = false; setTimeout(dropAutoFocus, 50); setTimeout(dropAutoFocus, 400); }
+  });
   if (qid) {
     $('#id').value = fmtId(qid);
     // after "Tải lại trang" during a session: reconnect straight away with the saved password
