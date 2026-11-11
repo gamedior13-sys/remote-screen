@@ -266,6 +266,21 @@ app.post('/fcm', (req, res) => {
 });
 
 // FCM diagnostics for the wake path: is the service account loaded, and how many phones reported a token?
+// Kiểm tra RTDB ngay lập tức (không phải chờ khởi động lại): đọc + ghi thử một key.
+app.get('/dbping', async (_req, res) => {
+  dbError = '';
+  const got = await dbGet('presence');
+  const wrote = await dbPut('_health', { t: Date.now(), by: 'dbping' });
+  if (wrote) dbStatus = 'ok';
+  res.set('Cache-Control', 'no-store').json({
+    db: dbStatus,
+    wrote,
+    keys: got && typeof got === 'object' ? Object.keys(got).length : null,
+    error: dbError,
+    sa: fcmCreds ? String(fcmCreds.client_email || '') : '',
+  });
+});
+
 app.get('/fcmcheck', (_req, res) => {
   const ids = Object.keys(presence);
   res.set('Cache-Control', 'no-store').json({
