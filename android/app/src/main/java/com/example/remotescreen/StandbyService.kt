@@ -1,5 +1,6 @@
 package com.example.remotescreen
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -32,6 +33,7 @@ class StandbyService : Service() {
 
     companion object {
         const val ACTION_STOP = "com.example.remotescreen.STANDBY_STOP"
+        const val ACTION_WATCHDOG = "com.example.remotescreen.STANDBY_WATCHDOG"
         private const val TAG = "StandbyService"
         private const val CHANNEL = "standby"
 
@@ -41,7 +43,11 @@ class StandbyService : Service() {
         /** Start standby if the owner enabled auto-wake and a password is set. */
         fun startIfEnabled(ctx: Context) {
             val p = ctx.getSharedPreferences("cfg", Context.MODE_PRIVATE)
-            if (!p.getBoolean("autoShare", false)) return
+            // "Tự đánh thức" luôn luôn bật: lần đầu chạy bản mới sẽ tự chuyển cờ cũ sang BẬT.
+            if (!p.getBoolean("autoWakeMigrated", false)) {
+                p.edit().putBoolean("autoShare", true).putBoolean("autoWakeMigrated", true).apply()
+            }
+            if (!p.getBoolean("autoShare", true)) return
             if ((p.getString("password", "") ?: "").length < 6) return
             if (ShareService.running) return
             try { ctx.startForegroundService(Intent(ctx, StandbyService::class.java)) } catch (t: Throwable) { Log.w(TAG, "start", t) }
@@ -72,13 +78,49 @@ class StandbyService : Service() {
         if (intent?.action == ACTION_STOP) { shutdown(); return START_NOT_STICKY }
         if (running) return START_STICKY
         // Nothing to do if sharing is already live, or the owner turned auto-wake off.
-        if (ShareService.running || !prefs().getBoolean("autoShare", false) || password().length < 6 || deviceId().isBlank()) {
+        if (ShareService.running || !prefs().getBoolean("autoShare", true) || password().length < 6 || deviceId().isBlank()) {
             stopSelf(); return START_NOT_STICKY
         }
         startForegroundNotification()
         running = true
         connect()
+        scheduleWatchdog()
         return START_STICKY
+    }
+
+    /** Giữ chế độ chờ luôn sống: báo thức mỗi 10 phút tự kiểm tra và khởi động lại nếu bị giết. */
+    private fun scheduleWatchdog() {
+        try {
+            val am = getSystemService(ALARM_SERVICE) as AlarmManager
+            val pi = PendingIntent.getService(
+                this, 12, Intent(this, StandbyService::class.java).setAction(ACTION_WATCHDOG),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            am.setInexactRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP, System.currentTimeMillis() + 10 * 60_000L, 10 * 60_000L, pi)
+        } catch (t: Throwable) { Log.w(TAG, "watchdog", t) }
+    }
+
+    private fun cancelWatchdog() {
+        try {
+            val am = getSystemService(ALARM_SERVICE) as AlarmManager
+            am.cancel(PendingIntent.getService(
+                this, 12, Intent(this, StandbyService::class.java).setAction(ACTION_WATCHDOG),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            ))
+        } catch (_: Throwable) {}
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // Vuốt tắt app khỏi đa nhiệm: hẹn 2 giây sau tự chạy lại chế độ chờ.
+        try {
+            val am = getSystemService(ALARM_SERVICE) as AlarmManager
+            val pi = PendingIntent.getService(
+                this, 11, Intent(this, StandbyService::class.java),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, System.currentTimeMillis() + 2000, pi)
+        } catch (t: Throwable) { Log.w(TAG, "taskRemoved", t) }
+        super.onTaskRemoved(rootIntent)
     }
 
     private fun startForegroundNotification() {
@@ -176,6 +218,7 @@ class StandbyService : Service() {
         try { ws?.close(1000, "bye") } catch (_: Throwable) {}
         try { ws?.cancel() } catch (_: Throwable) {}
         ws = null
+        cancelWatchdog()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
