@@ -272,6 +272,8 @@ app.get('/fcmcheck', (_req, res) => {
     configured: !!fcmCreds,
     db: dbStatus,
     dbError: dbError.slice(0, 200),
+    sa: fcmCreds ? String(fcmCreds.client_email || '') : '',
+    dbUrl: DB_URL,
     registered: ids.length,
     withToken: ids.filter((k) => presence[k] && presence[k].fcm).length,
     // Chẩn đoán mới nhất do điện thoại gửi lên (không kèm ID/mật khẩu) — để debug wake từ xa.
