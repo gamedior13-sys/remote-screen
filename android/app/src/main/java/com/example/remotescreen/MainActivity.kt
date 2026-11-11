@@ -525,7 +525,14 @@ class MainActivity : ComponentActivity() {
         val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         capturePending = true
         try {
-            projectionLauncher.launch(mpm.createScreenCaptureIntent())
+            // Android 14+: ép phạm vi "toàn bộ màn hình" bằng MediaProjectionConfig — không còn ô chọn
+            // "Một ứng dụng" (nếu chọn nhầm, khung hình gửi đi sẽ đen vì app được chọn không hiển thị).
+            val request = if (Build.VERSION.SDK_INT >= 34) {
+                mpm.createScreenCaptureIntent(android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay())
+            } else {
+                mpm.createScreenCaptureIntent()
+            }
+            projectionLauncher.launch(request)
         } catch (t: Throwable) {
             capturePending = false
             toast("Không mở được hộp thoại chia sẻ: ${t.message}")

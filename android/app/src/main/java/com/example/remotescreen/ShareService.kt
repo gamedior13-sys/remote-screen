@@ -443,6 +443,10 @@ class ShareService : Service() {
         })
         capturer!!.initialize(helper, applicationContext, videoSource!!.capturerObserver)
         capturer!!.startCapture(w, h, FPS)
+        try {
+            val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+            FcmPush.reportDiag(this, "capture ${w}x${h} · màn hình=" + (if (pm.isInteractive) "bật" else "tắt"))
+        } catch (_: Throwable) {}
         videoTrack = f.createVideoTrack("screen0", videoSource)
 
         val dm = getSystemService(DISPLAY_SERVICE) as DisplayManager
