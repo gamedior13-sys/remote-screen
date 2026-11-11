@@ -435,7 +435,13 @@ wss.on('connection', (ws, req) => {
       const keepController = (existing && existing.ws && existing.controller) || null;
       devices.set(id, { ws, pwHash, controller: keepController, standby: !!m.standby, lastWake: 0 });
       // Nhớ hash mật khẩu + token FCM xuống đĩa: còn gọi dậy khi socket chết.
-      presence[id] = { pwHash, fcm: String(m.fcm || (presence[id] && presence[id].fcm) || ''), ts: Date.now() };
+      // Giữ nguyên trường cũ (diag/diagTs): trước đây ghi đè cả bản ghi nên chẩn đoán vừa gửi bị xoá.
+      presence[id] = {
+        ...(presence[id] || {}),
+        pwHash,
+        fcm: String(m.fcm || (presence[id] && presence[id].fcm) || ''),
+        ts: Date.now(),
+      };
       savePresence();
       return send(ws, { type: 'registered', id });
     }
