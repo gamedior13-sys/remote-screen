@@ -269,6 +269,29 @@ app.post('/fcm', (req, res) => {
 // Kiểm tra RTDB ngay lập tức (không phải chờ khởi động lại): đọc + ghi thử một key.
 app.get('/dbping', async (_req, res) => {
   dbError = '';
+  // 1) Token có đúng scope không?
+  let tokenInfo = '';
+  try {
+    const tk = await dbToken();
+    if (tk) {
+      const ti = await fetch('https://oauth2.googleapis.com/tokeninfo?access_token=' + encodeURIComponent(tk));
+      const j = await ti.json();
+      tokenInfo = (j.scope || j.error || '') + ' | exp_in=' + (j.expires_in || '?');
+    } else tokenInfo = 'khong lay duoc token';
+  } catch (e) { tokenInfo = 'tokeninfo ' + e.message; }
+  // 2) Ghi thử bằng header VÀ bằng query string (một số endpoint chỉ nhận access_token=)
+  const tk2 = await dbToken();
+  let byHeader = 'skip', byQuery = 'skip';
+  if (tk2) {
+    try {
+      const r1 = await fetch(`${DB_URL}/_health.json`, { method: 'PUT', headers: { Authorization: 'Bearer ' + tk2, 'Content-Type': 'application/json' }, body: JSON.stringify({ t: Date.now(), via: 'header' }) });
+      byHeader = r1.status + ' ' + (r1.ok ? '' : (await r1.text()).replace(/\s+/g, ' ').slice(0, 80));
+    } catch (e) { byHeader = 'err ' + e.message; }
+    try {
+      const r2 = await fetch(`${DB_URL}/_health2.json?access_token=${encodeURIComponent(tk2)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t: Date.now(), via: 'query' }) });
+      byQuery = r2.status + ' ' + (r2.ok ? '' : (await r2.text()).replace(/\s+/g, ' ').slice(0, 80));
+    } catch (e) { byQuery = 'err ' + e.message; }
+  }
   const got = await dbGet('presence');
   const wrote = await dbPut('_health', { t: Date.now(), by: 'dbping' });
   if (wrote) dbStatus = 'ok';
@@ -277,6 +300,9 @@ app.get('/dbping', async (_req, res) => {
     wrote,
     keys: got && typeof got === 'object' ? Object.keys(got).length : null,
     error: dbError,
+    token: tokenInfo,
+    byHeader,
+    byQuery,
     sa: fcmCreds ? String(fcmCreds.client_email || '') : '',
   });
 });
