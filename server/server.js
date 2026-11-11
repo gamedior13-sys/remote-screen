@@ -76,9 +76,10 @@ async function cloudflareTurn() {
   const c = turnCache.cf;
   if (c.list && Date.now() < c.until) return c.list;
   try {
+    const auth = 'Bearer ' + CF_TURN_TOKEN.trim();
     const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${CF_TURN_KEY_ID.trim()}/credentials/generate-ice-servers`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${CF_TURN_TOKEN.trim()}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: auth, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ttl: 86400 }),
     });
     const text = await r.text();
@@ -140,6 +141,7 @@ const FAIL_WINDOW_MS = 10 * 60e3;  // ... per IP within this window
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', true);
+app.use(express.json());
 // Every TURN relay the web client may measure, one entry per host, from all configured providers.
 // The client keeps the one with the lowest ping and the device is given the same one.
 async function relayCandidates() {
@@ -187,6 +189,18 @@ async function pickedIce(pick) {
 }
 app.get('/healthz', (_req, res) => res.send('ok'));
 
+// Phone reports its Firebase push token so the server can wake it while its socket is dead.
+app.post('/fcm', (req, res) => {
+  const b = req.body || {};
+  const id = String(b.id || '').replace(/\s+/g, '');
+  const fcm = String(b.fcm || '').trim();
+  const pr = presence[id];
+  if (!pr || !fcm || !safeEqual(pr.pwHash, sha(String(b.password || '')))) return res.status(403).json({ ok: false });
+  pr.fcm = fcm;
+  savePresence();
+  res.json({ ok: true });
+});
+
 // Versions for the "sync" buttons: the web page (hash of index.html) and the newest Android build
 // (version.json is written by the CI next to remote-screen.apk).
 const WEB_VERSION = (() => {
@@ -231,6 +245,55 @@ const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
 const devices = new Map();
 /** ip -> { count, resetAt } */
 const fails = new Map();
+
+// Persisted reachability per device: password hash + FCM token, so a phone whose standby
+// socket is DEAD (Android killed the app) can still be woken via Firebase push.
+const presenceFile = path.join(__dirname, 'presence.json');
+let presence = {};
+try { presence = JSON.parse(fs.readFileSync(presenceFile, 'utf8')); } catch {}
+const savePresence = () => { try { fs.writeFileSync(presenceFile, JSON.stringify(presence)); } catch (e) { console.warn('presence save', e.message); } };
+
+// ---- Firebase Cloud Messaging (wake a phone whose standby socket is dead) ----
+let fcmCreds = null;
+try { fcmCreds = process.env.FIREBASE_SERVICE_ACCOUNT ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT) : null; } catch {}
+let fcmAuth = { token: null, until: 0 };
+
+async function fcmAccessToken() {
+  if (!fcmCreds) return null;
+  if (fcmAuth.token && Date.now() < fcmAuth.until) return fcmAuth.token;
+  const now = Math.floor(Date.now() / 1000);
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const head = b64({ alg: 'RS256', typ: 'JWT' });
+  const claim = b64({ iss: fcmCreds.client_email, scope: 'https://www.googleapis.com/auth/firebase.messaging', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 });
+  const signer = crypto.createSign('RSA-SHA256');
+  signer.update(head + '.' + claim);
+  const sig = signer.sign(String(fcmCreds.private_key).replace(/\\n/g, '\n')).toString('base64url');
+  const r = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'grant_type=' + encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') + '&assertion=' + encodeURIComponent(head + '.' + claim + '.' + sig),
+  });
+  if (!r.ok) { console.warn('fcm auth', r.status, (await r.text()).slice(0, 200)); return null; }
+  const j = await r.json();
+  fcmAuth = { token: j.access_token, until: Date.now() + 45 * 60e3 };
+  return j.access_token;
+}
+
+async function fcmWake(id, token) {
+  try {
+    if (!fcmCreds || !token) return false;
+    const tok = await fcmAccessToken();
+    if (!tok) return false;
+    const auth = 'Bearer ' + tok;
+    const r = await fetch(`https://fcm.googleapis.com/v1/projects/${fcmCreds.project_id}/messages:send`, {
+      method: 'POST',
+      headers: { Authorization: auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: { token, data: { action: 'wake', id }, android: { priority: 'HIGH' } } }),
+    });
+    if (!r.ok) console.warn('fcm wake', id, r.status, (await r.text()).slice(0, 200));
+    return r.ok;
+  } catch (t) { console.warn('fcm wake', id, t.message); return false; }
+}
 
 const sha = (s) => crypto.createHash('sha256').update(String(s)).digest();
 const safeEqual = (a, b) => crypto.timingSafeEqual(a, b);
@@ -291,14 +354,25 @@ wss.on('connection', (ws, req) => {
       // Giữ controller cũ khi máy đăng ký lại cùng mật khẩu, để nối lại mượt sau khi rớt mạng.
       const keepController = (existing && existing.ws && existing.controller) || null;
       devices.set(id, { ws, pwHash, controller: keepController, standby: !!m.standby, lastWake: 0 });
+      // Nhớ hash mật khẩu + token FCM xuống đĩa: còn gọi dậy khi socket chết.
+      presence[id] = { pwHash, fcm: String(m.fcm || (presence[id] && presence[id].fcm) || ''), ts: Date.now() };
+      savePresence();
       return send(ws, { type: 'registered', id });
     }
 
     // ---- controller connects ----
     if (m.type === 'connect' && !ws.role) {
-      const dev = devices.get(String(m.id || '').replace(/\s+/g, ''));
+      const idc = String(m.id || '').replace(/\s+/g, '');
+      const dev = devices.get(idc);
       const ok = dev && safeEqual(dev.pwHash, sha(m.password || ''));
       if (!ok) {
+        // Socket máy đích đã chết (Android giết app): thử đẩy FCM gọi dậy — nhưng chỉ khi
+        // mật khẩu khớp với hash đã lưu, và không bao giờ tiết lộ ID nào tồn tại.
+        const pr = presence[idc];
+        if (pr && pr.fcm && safeEqual(pr.pwHash, sha(m.password || ''))) {
+          fcmWake(idc, pr.fcm);
+          return send(ws, { type: 'error', code: 'waking', message: 'Waking device' });
+        }
         // No lock-out any more; a short pause per wrong attempt still makes guessing impractical.
         // Same message for unknown id and wrong password: do not leak which IDs exist.
         return setTimeout(() => send(ws, { type: 'error', code: 'denied', message: 'Wrong ID or password' }), 1000);
@@ -319,7 +393,7 @@ wss.on('connection', (ws, req) => {
         dev.controller = null;
       }
       ws.role = 'controller';
-      ws.deviceId = String(m.id).replace(/\s+/g, '');
+      ws.deviceId = idc;
       dev.controller = ws;
       send(ws, { type: 'connected' });
       return pickedIce(m.turn).catch(() => null)
