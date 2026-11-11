@@ -189,7 +189,14 @@ class ControlAccessibilityService : AccessibilityService() {
     // ================================================================ self-update helper
     // Only while our own updater asked for it (a few minutes): press "Install" in the package installer
     // and "Start now" in the screen-capture dialog, so a remote update needs nobody at the phone.
-    private var scopeClicked = false
+    private var scopeStep = 0
+
+    /** Chia sẻ đã chạy: dừng quét ngay để không bấm nhầm thêm nút nào (bấm 2 lần làm Android huỷ phiên). */
+    fun endConfirmLoop() {
+        confirmRun++
+        confirmUntil = 0L
+        scopeStep = 6
+    }
     private val confirmWords = listOf(
         "Bắt đầu ngay", "Start now", "Bắt đầu ghi", "Bắt đầu chia sẻ", "Bắt đầu", "Start",
         "Chia sẻ màn hình", "Share screen", "Start sharing", "Chia sẻ", "Share",
@@ -238,7 +245,7 @@ class ControlAccessibilityService : AccessibilityService() {
         confirmStart = now
         val run = ++confirmRun
         confirmUntil = now + 25_000
-        scopeClicked = false
+        scopeStep = 0
         var misses = 0
         fun tick() {
             if (run != confirmRun || !Updater.autoConfirmActive(this)) return
@@ -247,7 +254,7 @@ class ControlAccessibilityService : AccessibilityService() {
             val stillThere = allRoots().any { isConfirmPkg(it.packageName?.toString()) }
             if (misses >= 10 || (!stillThere && misses >= 3)) { if (run == confirmRun) confirmRun = 0; return }
             if (SystemClock.uptimeMillis() > confirmUntil) { if (run == confirmRun) confirmRun = 0; return }
-            main.postDelayed({ tick() }, if (acted) 320 else 420)
+            main.postDelayed({ tick() }, if (acted) 700 else 420)
         }
         main.postDelayed({ tick() }, 200)
     }
@@ -297,15 +304,30 @@ class ControlAccessibilityService : AccessibilityService() {
         for (r in roots) for (w in dontAskWords) for (n in r.findAccessibilityNodeInfosByText(w)) {
             if (n.isCheckable && !n.isChecked) { n.performAction(AccessibilityNodeInfo.ACTION_CLICK); return true }
         }
-        // Hộp thoại chia sẻ màn hình: ô chọn phạm vi "Một ứng dụng / Toàn bộ màn hình" (Android 14+).
-        // Danh sách xổ ra nằm ở cửa sổ popup riêng nên phải dò qua TẤT CẢ cửa sổ.
-        if (!scopeClicked) {
+        // Hộp thoại chia sẻ màn hình (Android 14+): nhiều ROM mặc định "Một ứng dụng", phải chuyển
+        // sang "Toàn bộ màn hình" TRƯỚC khi bấm nút xác nhận, nếu không chỉ chia sẻ đúng 1 app.
+        if (scopeStep < 6) {
             val entire = findClickableOption(roots, "màn hình") { isEntireText(it) }
                 ?: findClickableOption(roots, "screen") { isEntireText(it) }
             if (entire != null) {
-                entire.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                scopeClicked = true
-                return true
+                val already = entire.isChecked || entire.isSelected ||
+                    entire.parent?.isChecked == true || entire.parent?.isSelected == true
+                if (already) {
+                    scopeStep = 6
+                } else {
+                    entire.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    scopeStep++
+                    return true
+                }
+            } else {
+                // Chưa thấy lựa chọn toàn màn hình: ô chọn phạm vi đang đóng (hiện "Một ứng dụng") → mở ra.
+                val single = findClickableOption(roots, "ứng dụng") { isSingleText(it) }
+                    ?: findClickableOption(roots, "app") { isSingleText(it) }
+                if (single != null) {
+                    single.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    scopeStep++
+                    return true
+                }
             }
         }
         for (w in confirmWords) for (r in roots) for (n in r.findAccessibilityNodeInfosByText(w)) {

@@ -77,8 +77,12 @@ class MainActivity : ComponentActivity() {
         override fun run() { refresh(); statusText.postDelayed(this, 1000) }
     }
 
+    /** Đang chờ hộp thoại cấp quyền chia sẻ: chặn mọi yêu cầu thứ hai (hai phiên làm Android huỷ phiên đầu). */
+    private var capturePending = false
+
     private val projectionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+            capturePending = false
             val data = r.data
             if (r.resultCode == Activity.RESULT_OK && data != null) {
                 val svc = Intent(this, ShareService::class.java)
@@ -348,7 +352,7 @@ class MainActivity : ComponentActivity() {
     /** After a self-update: start sharing again by itself (the accessibility service confirms the dialog). */
     private fun maybeAutostart() {
         val want = intent?.getBooleanExtra("autostart", false) == true || prefs.getBoolean("autostart", false)
-        if (!want || ShareService.running) return
+        if (!want || ShareService.running || capturePending) return
         prefs.edit().putBoolean("autostart", false).apply()
         intent?.removeExtra("autostart")
         if (passwordEdit.text.length < 6) return
@@ -479,6 +483,7 @@ class MainActivity : ComponentActivity() {
             statusText.postDelayed({ refresh() }, 600)
             return
         }
+        if (capturePending) return
         val pw = passwordEdit.text.toString()
         if (pw.length < 6) { passwordEdit.error = "Tối thiểu 6 ký tự"; passwordEdit.requestFocus(); return }
         val custom = serverEdit.text.toString().trim()
@@ -490,7 +495,13 @@ class MainActivity : ComponentActivity() {
         // Bấm tay cũng phải tự bấm tiếp hộp thoại hệ thống, không chỉ đường autostart sau khi được đánh thức.
         Updater.allowAutoConfirm(this, 2 * 60_000L)
         val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        projectionLauncher.launch(mpm.createScreenCaptureIntent())
+        capturePending = true
+        try {
+            projectionLauncher.launch(mpm.createScreenCaptureIntent())
+        } catch (t: Throwable) {
+            capturePending = false
+            toast("Không mở được hộp thoại chia sẻ: ${t.message}")
+        }
     }
 
     private fun refresh() {

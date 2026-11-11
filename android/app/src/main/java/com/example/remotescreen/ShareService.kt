@@ -146,6 +146,8 @@ class ShareService : Service() {
         startForegroundNotification()
         running = true
         state = STATE_CONNECTING
+        // Đã có phiên chia sẻ: tắt bộ tự bấm hộp thoại, tránh bấm nhầm lần hai (Android sẽ huỷ phiên).
+        ControlAccessibilityService.instance?.endConfirmLoop()
         acquireLocks()
 
         thread(name = "init") {
