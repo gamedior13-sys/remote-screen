@@ -17,7 +17,7 @@ class BootReceiver : BroadcastReceiver() {
             a == "com.htc.intent.action.QUICKBOOT_POWERON"
         ) {
             val p = ctx.getSharedPreferences("cfg", Context.MODE_PRIVATE)
-            // "Tự đánh thức" mặc định BẬT: chỉ cần mật khẩu đã lưu là đứng chờ kết nối sau khi开机.
+            // "Tự đánh thức" mặc định BẬT: chỉ cần mật khẩu đã lưu là đứng chờ kết nối sau khi máy mở lại.
             if (!p.getBoolean("autoShare", true)) return
             if ((p.getString("password", "") ?: "").length < 6) return
             StandbyService.startIfEnabled(ctx)
