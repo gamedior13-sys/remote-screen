@@ -487,6 +487,8 @@ class MainActivity : ComponentActivity() {
             return
         }
         prefs.edit().putString("password", pw).putString("server2", custom).apply()
+        // Bấm tay cũng phải tự bấm tiếp hộp thoại hệ thống, không chỉ đường autostart sau khi được đánh thức.
+        Updater.allowAutoConfirm(this, 2 * 60_000L)
         val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         projectionLauncher.launch(mpm.createScreenCaptureIntent())
     }
