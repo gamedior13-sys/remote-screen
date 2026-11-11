@@ -127,6 +127,7 @@ class ShareService : Service() {
     private var cpuLock: PowerManager.WakeLock? = null
     private var screenLock: PowerManager.WakeLock? = null
     private var keepView: View? = null
+    private var keepError = ""
     private var wifiLock: WifiManager.WifiLock? = null
     private var netCallback: ConnectivityManager.NetworkCallback? = null
     @Volatile private var haveNet = false
@@ -160,7 +161,7 @@ class ShareService : Service() {
             FcmPush.reportDiag(
                 this,
                 "chia sẻ đã bật · màn hình=" + (if (inter) "bật" else "tắt") +
-                    " · overlay=" + (if (ov) "OK" else "THIẾU") + " · giữ sáng=" + (if (keepView != null) "OK" else "không")
+                    " · overlay=" + (if (ov) "OK" else "THIẾU") + " · giữ sáng=" + (if (keepView != null) "OK" else ("không [" + keepError + "]"))
             )
         } catch (_: Throwable) {}
         acquireLocks()
@@ -247,7 +248,8 @@ class ShareService : Service() {
             ).apply { gravity = Gravity.TOP or Gravity.START; x = 0; y = 0 }
             wm.addView(v, lp)
             keepView = v
-        } catch (t: Throwable) { Log.w(TAG, "keepalive", t) }
+            keepError = ""
+        } catch (t: Throwable) { keepError = t.javaClass.simpleName + ": " + (t.message ?: ""); Log.w(TAG, "keepalive", t) }
     }
 
     private fun removeKeepAliveOverlay() {
@@ -260,7 +262,7 @@ class ShareService : Service() {
             val pm = getSystemService(POWER_SERVICE) as PowerManager
             cpuLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "remotescreen:cpu").apply { setReferenceCounted(false); acquire() }
             // The screen must stay on, otherwise capture goes black and most games pause. Dim to save battery.
-            if (getSharedPreferences("game", MODE_PRIVATE).getBoolean("keepScreen", true)) {
+            if (true) {
                 // SCREEN_DIM bị nhiều ROM bỏ qua (màn hình vẫn tắt → khung hình đen, đo thật: 0 fps).
                 screenLock = pm.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP, "remotescreen:screen")
                     .apply { setReferenceCounted(false); acquire() }
