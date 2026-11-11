@@ -106,6 +106,9 @@ class MainActivity : ComponentActivity() {
                     .putExtra(ShareService.EXTRA_PASSWORD, passwordEdit.text.toString())
                 startForegroundService(svc)
                 statusText.postDelayed({ refresh() }, 600)
+                // Ẩn app ngay sau khi chia sẻ chạy: nếu để foreground, người điều khiển chỉ thấy
+                // giao diện tối của chính app (bị nén thành khung đen) thay vì màn hình thật.
+                statusText.postDelayed({ moveTaskToBack(true) }, 1500)
             } else {
                 toast("Bạn đã từ chối quyền chia sẻ màn hình")
             }
