@@ -482,11 +482,16 @@ class MainActivity : ComponentActivity() {
         startBtn.setTextColor(if (running) BAD else Color.WHITE)
     }
 
-    private fun autoWakeOn() = prefs.getBoolean("autoShare", false)
+    private fun autoWakeOn() = prefs.getBoolean("autoShare", true)
 
     private fun canOverlay() = Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(this)
 
     private fun renderAutoWake() {
+        // "Tự đánh thức" luôn luôn bật: lần đầu chạy bản mới tự chuyển cờ cũ sang BẬT.
+        if (!prefs.getBoolean("autoWakeMigrated", false)) {
+            prefs.edit().putBoolean("autoShare", true).putBoolean("autoWakeMigrated", true).apply()
+            StandbyService.startIfEnabled(this)
+        }
         if (!::awBtn.isInitialized) return
         val on = autoWakeOn()
         awBtn.text = if (on) "Đang bật · bấm để tắt" else "Bật tự đánh thức"
