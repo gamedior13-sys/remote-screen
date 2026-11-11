@@ -63,6 +63,19 @@
                 android:value="Keeps a connection so the owner can start screen sharing on this device remotely" />
         </service>
 
+        <service
+            android:name=".WakeMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <provider
+            android:name=".FcmInitProvider"
+            android:exported="false"
+            android:authorities="${applicationId}.fcminit" />
+
         <receiver
             android:name=".BootReceiver"
             android:exported="true">
