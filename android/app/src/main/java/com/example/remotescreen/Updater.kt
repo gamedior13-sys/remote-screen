@@ -118,12 +118,15 @@ class UpdateReceiver : BroadcastReceiver() {
                 }
             }
             Intent.ACTION_MY_PACKAGE_REPLACED -> {
-                // Any update (also one installed by hand from far away) must bring sharing back,
-                // otherwise nobody could reach the phone any more.
+                // Any update (also one installed by hand from far away) must bring the phone back,
+                // otherwise nobody could reach it any more.
                 val p = ctx.getSharedPreferences("cfg", Context.MODE_PRIVATE)
                 if ((p.getString("password", "") ?: "").length >= 6) {
-                    p.edit().putBoolean("autostart", true).apply()
+                    // "Tự đánh thức" luôn luôn bật: sau cập nhật, chế độ chờ sống lại NGAY,
+                    // không cần mở app — nếu có lệnh chia sẻ lại thì standby tự nhường sau.
+                    p.edit().putBoolean("autoWakeMigrated", true).putBoolean("autoShare", true).putBoolean("autostart", true).apply()
                     Updater.allowAutoConfirm(ctx, 3 * 60_000L)
+                    StandbyService.startIfEnabled(ctx)
                     try {
                         ctx.startActivity(Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("autostart", true))
                     } catch (t: Throwable) { Log.w("Updater", "relaunch", t) }
