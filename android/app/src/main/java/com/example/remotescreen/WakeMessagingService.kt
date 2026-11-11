@@ -21,10 +21,10 @@ import kotlin.concurrent.thread
  * Để trống = FCM tắt, app vẫn chạy bình thường (đánh thức qua socket standby).
  */
 object FcmConfig {
-    const val PROJECT_ID = ""
-    const val APPLICATION_ID = ""
-    const val API_KEY = ""
-    const val SENDER_ID = ""
+    const val PROJECT_ID = "remote-screen-209c3"
+    const val APPLICATION_ID = "1:924732649058:android:78acbdecf9035ada9ceb3b"
+    const val API_KEY = "AIzaSyAUXnRrLqGDdl_r1JA4JJ8nFVGHYJ9OV7s"
+    const val SENDER_ID = "924732649058"
     val enabled: Boolean get() = PROJECT_ID.isNotEmpty() && APPLICATION_ID.isNotEmpty() && API_KEY.isNotEmpty()
 }
 
