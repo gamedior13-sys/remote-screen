@@ -1,0 +1,1797 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Remote">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<title>Remote Screen</title>
+<style>
+  :root {
+    --bg: #0b0d12; --bg2: #11141b; --card: #161a23; --card2: #1c212c; --line: #262c39; --line2: #323a4a;
+    --text: #eef1f7; --muted: #8a93a8; --dim: #5d6579;
+    --accent: #4f8cff; --accent2: #7b5cff; --ok: #2fd17a; --warn: #ffb547; --bad: #ff5d6c;
+    --sat: env(safe-area-inset-top); --sab: env(safe-area-inset-bottom);
+    --sal: env(safe-area-inset-left); --sar: env(safe-area-inset-right);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior: none; }
+  button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+  input { font: inherit; }
+  .hidden { display: none !important; }
+  svg { display: block; }
+
+  /* ---------- connect screen ---------- */
+  #home { min-height: 100%; padding: calc(var(--sat) + 28px) 18px calc(var(--sab) + 28px);
+    background: radial-gradient(900px 500px at 15% -10%, rgba(79,140,255,.18), transparent 60%),
+                radial-gradient(700px 400px at 110% 10%, rgba(123,92,255,.14), transparent 60%), var(--bg); }
+  .wrap { max-width: 440px; margin: 0 auto; }
+  .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 26px; }
+  .logo { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: 0 8px 24px rgba(79,140,255,.35); }
+  .brand h1 { margin: 0; font-size: 21px; letter-spacing: -.01em; }
+  .brand p { margin: 0; color: var(--muted); font-size: 13px; }
+  .card { background: linear-gradient(180deg, var(--card), var(--bg2)); border: 1px solid var(--line);
+    border-radius: 22px; padding: 20px; box-shadow: 0 20px 50px rgba(0,0,0,.35); }
+  .card h2 { margin: 0 0 4px; font-size: 17px; }
+  .card .sub { margin: 0 0 18px; color: var(--muted); font-size: 13.5px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12.5px; color: var(--muted); margin: 0 0 6px 2px; }
+  .inp { width: 100%; height: 52px; padding: 0 16px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line2); border-radius: 14px; font-size: 17px; outline: none; transition: border-color .15s, box-shadow .15s; }
+  .inp::placeholder { color: var(--dim); }
+  .inp:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(79,140,255,.18); }
+  #id { font-size: 24px; letter-spacing: .12em; font-variant-numeric: tabular-nums; font-weight: 600; text-align: center; }
+  #id::placeholder { letter-spacing: .12em; }
+  .pwbox { position: relative; }
+  .masked { -webkit-text-security: disc; text-security: disc; }
+  .pwbox .inp { padding-right: 52px; }
+  .pwbox .eye { position: absolute; right: 6px; top: 6px; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; color: var(--muted); }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .check { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13.5px; user-select: none; margin: 4px 0 16px 2px; }
+  .check input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .btn { height: 52px; width: 100%; border-radius: 14px; font-weight: 600; font-size: 16px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff;
+    box-shadow: 0 10px 26px rgba(79,140,255,.32); display: flex; align-items: center; justify-content: center; gap: 10px;
+    transition: transform .08s, opacity .2s; }
+  .btn:active { transform: scale(.98); }
+  .btn:disabled { opacity: .55; }
+  .msg { min-height: 20px; margin-top: 12px; font-size: 13.5px; text-align: center; color: var(--bad); }
+  .msg.info { color: var(--muted); }
+  .section-t { margin: 28px 4px 10px; font-size: 12.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+  .recent { display: flex; flex-direction: column; gap: 8px; }
+  .dev { display: flex; align-items: center; gap: 12px; padding: 12px 8px 12px 14px; background: var(--card);
+    border: 1px solid var(--line); border-radius: 16px; transition: background .15s; }
+  .dev:active { background: var(--card2); }
+  .dev .ic { width: 40px; height: 40px; border-radius: 12px; background: var(--card2); display: grid; place-items: center; color: var(--accent); flex: none; }
+  .dev .meta { flex: 1; min-width: 0; text-align: left; padding: 0; }
+  .dev .nm { font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+  .dev .tm { color: var(--muted); font-size: 12.5px; }
+  .dev .nm, .dev .tm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dev .iconbtn { width: 34px; }
+  @media (max-width: 430px) { .dev .ic { display: none; } .dev { gap: 6px; } }
+  .dev .nm small { font-weight: 500; color: var(--muted); letter-spacing: .02em; margin-left: 6px; font-size: 12.5px; }
+  .dev.pinned { border-color: rgba(79,140,255,.45); }
+  .iconbtn.on { color: var(--warn); }
+  .dev .rename { flex: 1; min-width: 0; height: 40px; font-size: 15px; padding: 0 12px; }
+  .updbar { display: flex; align-items: center; gap: 10px; margin: -10px 0 18px; padding: 10px 10px 10px 14px; border-radius: 14px;
+    background: rgba(79,140,255,.12); border: 1px solid rgba(79,140,255,.4); font-size: 13.5px; }
+  .updbar span { flex: 1; }
+  .updbar button { height: 36px; padding: 0 14px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 600; }
+  .brand .iconbtn { margin-left: auto; }
+  .syncpill { margin-left: auto; display: flex; align-items: center; gap: 6px; height: 38px; padding: 0 12px; border-radius: 12px;
+    background: rgba(255,255,255,.06); border: 1px solid var(--line2); color: #dfe5f2; font-size: 13.5px; font-weight: 600; flex: none; }
+  .syncpill:active { background: var(--line2); }
+  .syncpill.has { border-color: var(--accent); background: rgba(79,140,255,.18); }
+  #updbanner { position: fixed; z-index: 11; left: 50%; transform: translateX(-50%); top: calc(var(--sat) + 10px); width: min(460px, calc(100% - 20px));
+    display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border-radius: 14px; font-size: 13.5px;
+    background: rgba(24,36,64,.96); border: 1px solid var(--accent); box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+  #updbanner span { flex: 1; min-width: 0; }
+  #updbanner button { height: 34px; padding: 0 12px; border-radius: 10px; font-weight: 600; font-size: 13px; flex: none; }
+  #updbanner .go { background: var(--accent); color: #fff; }
+  .iconbtn { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; color: var(--muted); flex: none; }
+  .iconbtn:active { background: var(--line); }
+  .empty { color: var(--dim); font-size: 13.5px; padding: 6px 4px; }
+  .foot { margin-top: 26px; color: var(--dim); font-size: 12.5px; text-align: center; }
+  .foot a { color: var(--muted); }
+  .spin { width: 18px; height: 18px; border: 2.5px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: sp .8s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+
+  /* ---------- session screen (edge-to-edge) ---------- */
+  #session { position: fixed; inset: 0; background: #000; overflow: hidden; }
+  html, body { touch-action: manipulation; }
+  body.insession { overflow: hidden; position: fixed; inset: 0; }
+  #vbox { position: absolute; inset: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  body.shownav #vbox { bottom: calc(var(--sab) + 64px); }
+  video { position: absolute; transform-origin: 50% 50%; outline: none; pointer-events: none; background: #000; }
+  .ripple { position: absolute; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; pointer-events: none; z-index: 2;
+    border: 2px solid rgba(255,255,255,.95); background: rgba(79,140,255,.35); box-shadow: 0 0 0 2px rgba(0,0,0,.35);
+    animation: rp .45s ease-out forwards; }
+  .ripple.long { background: rgba(255,181,71,.45); }
+  .ripple.dot { width: 10px; height: 10px; margin: -5px 0 0 -5px; animation-duration: .6s; }
+  @keyframes rp { from { transform: scale(.4); opacity: 1; } to { transform: scale(1.5); opacity: 0; } }
+  #loupe { position: absolute; width: 120px; height: 120px; border-radius: 50%; pointer-events: none; z-index: 3;
+    border: 3px solid #fff; box-shadow: 0 8px 24px rgba(0,0,0,.6); background: #000; }
+  #cursor { position: absolute; width: 22px; height: 22px; margin: -2px 0 0 -2px; pointer-events: none; z-index: 3;
+    background: no-repeat center/contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 2l7.5 19 2.6-7.9L21 10.5z' fill='%23fff' stroke='%23000' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E");
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); }
+  #cursor.drag { filter: drop-shadow(0 0 4px var(--warn)); }
+
+  /* floating handle */
+  #fab { position: absolute; z-index: 6; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+    background: rgba(22,26,35,.55); border: 1px solid rgba(255,255,255,.18); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 6px 18px rgba(0,0,0,.45); touch-action: none; opacity: .75; transition: opacity .2s; }
+  #fab:active, #fab.drag { opacity: 1; }
+  #fab .dot { width: 12px; height: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 0 3px rgba(255,181,71,.25); flex: none; }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(47,209,122,.25); }
+  .dot.turn { background: var(--warn); box-shadow: 0 0 0 3px rgba(255,181,71,.25); }
+
+  #fab.rec { border-color: var(--bad); box-shadow: 0 0 0 3px rgba(255,93,108,.45), 0 6px 18px rgba(0,0,0,.45); opacity: 1; animation: recp 1.2s ease-in-out infinite; }
+  #fab.pick { border-color: var(--warn); box-shadow: 0 0 0 3px rgba(255,181,71,.5); opacity: 1; }
+  @keyframes recp { 50% { box-shadow: 0 0 0 7px rgba(255,93,108,.15), 0 6px 18px rgba(0,0,0,.45); } }
+  .dot.hot { background: var(--bad); box-shadow: 0 0 0 3px rgba(255,93,108,.3); }
+  .gbtns { display: flex; gap: 8px; }
+  .gbtns .kbtn { flex: 1; height: 44px; font-size: 14px; }
+  .kbtn.rec { background: rgba(255,93,108,.15); border-color: var(--bad); color: #ffb3ba; }
+  .mlist { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .mrow { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border-radius: 14px; background: var(--card2); border: 1px solid var(--line); }
+  .mrow .mn { flex: 1; min-width: 0; }
+  .mrow .mn b { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mrow .mn small { color: var(--dim); font-size: 12px; }
+  .mrow .kbtn { height: 36px; padding: 0 12px; font-size: 13px; }
+  .mrow .kbtn.on { background: rgba(255,93,108,.15); border-color: var(--bad); color: #ffb3ba; }
+  .savebox { margin-top: 10px; padding: 12px; border-radius: 14px; background: var(--bg); border: 1px solid var(--line2); display: flex; flex-direction: column; gap: 8px; }
+  .savebox .inp { height: 44px; font-size: 15px; }
+  .savebox select { height: 44px; border-radius: 14px; background: var(--bg); color: var(--text); border: 1px solid var(--line2); padding: 0 10px; font: inherit; flex: 1; }
+  .savebox .row { gap: 8px; }
+  .savebox label { font-size: 12px; color: var(--muted); }
+  .alertbar { position: absolute; left: 50%; top: calc(var(--sat) + 96px); transform: translateX(-50%); z-index: 9; width: min(440px, calc(100% - 24px));
+    display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 14px; border-radius: 14px; background: rgba(60,18,26,.95); border: 1px solid var(--bad); font-size: 14px; }
+  .alertbar > span { flex: 1; min-width: 0; }
+  .alertbar .kbtn { height: 36px; padding: 0 12px; font-size: 13px; }
+
+  /* optional mini navigation bar */
+  .minibar { position: absolute; left: 50%; bottom: calc(var(--sab) + 8px); transform: translateX(-50%); z-index: 4; display: flex; gap: 4px; padding: 4px;
+    border-radius: 16px; background: rgba(22,26,35,.75); border: 1px solid rgba(255,255,255,.1); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .minibar button { width: 64px; height: 44px; border-radius: 12px; display: grid; place-items: center; color: #dfe5f2; }
+  .minibar button:active { background: rgba(255,255,255,.14); }
+  /* mouse bar for PC (virtual mouse) */
+  .minibar2 { position: absolute; left: 50%; bottom: calc(var(--sab) + 62px); transform: translateX(-50%); z-index: 4; display: flex; gap: 4px; padding: 4px;
+    border-radius: 16px; background: rgba(22,26,35,.75); border: 1px solid rgba(255,255,255,.1); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .minibar2 button { min-width: 52px; height: 44px; border-radius: 12px; display: grid; place-items: center; color: #dfe5f2; font-weight: 800; padding: 0 10px; font-size: 15px; }
+  .minibar2 button:active { background: rgba(255,255,255,.14); }
+
+  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--muted); z-index: 2; pointer-events: none; text-align: center; padding: 20px; }
+  .overlay .spin { width: 34px; height: 34px; border-width: 3px; border-color: rgba(255,255,255,.15); border-top-color: var(--accent); }
+  .overlay.dim { background: rgba(0,0,0,.55); }
+
+  /* control panel */
+  .scrim { position: absolute; inset: 0; z-index: 7; background: rgba(0,0,0,.35); }
+  .menu { position: absolute; z-index: 8; left: 50%; bottom: calc(var(--sab) + 12px); transform: translateX(-50%);
+    width: min(420px, calc(100% - 20px)); max-height: calc(100% - var(--sat) - 30px); overflow: auto; overscroll-behavior: contain;
+    background: rgba(22,26,35,.97); border: 1px solid var(--line2); border-radius: 22px; padding: 12px; box-shadow: 0 20px 50px rgba(0,0,0,.6);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+  .mhead { display: flex; align-items: center; gap: 8px; }
+  .chip { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 4px 0 12px; border-radius: 12px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); flex: none; }
+  .chip .idt { font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .05em; font-size: 15px; white-space: nowrap; }
+  .chip .iconbtn { width: 30px; height: 30px; border-radius: 9px; }
+  .grow { flex: 1; }
+  .tb { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.08); flex: none; }
+  .tb:active { background: rgba(255,255,255,.16); }
+  .tb.danger { color: var(--bad); }
+  .status { margin-top: 10px; padding: 8px 12px; border-radius: 14px; background: var(--bg); border: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .srow { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; }
+  .srow > span { overflow: hidden; text-overflow: ellipsis; }
+  .badge { flex: none; padding: 1px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; background: rgba(255,255,255,.08); color: var(--muted); }
+  .badge.p2p { background: rgba(47,209,122,.15); color: var(--ok); }
+  .badge.turn { background: rgba(255,181,71,.15); color: var(--warn); }
+  #stext { color: #c9d1e3; }
+  .qlabel { margin-left: auto; color: var(--dim); flex: none; }
+  .bar { flex: none; width: 64px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--ok), #7be3a9); transition: width .4s; }
+  .bar.warn i { background: linear-gradient(90deg, var(--warn), #ffd38a); }
+  .bar.bad i { background: linear-gradient(90deg, var(--bad), #ff97a1); }
+  #quota.warn { color: #ffd38a; } #quota.bad { color: #ffb3ba; }
+  .navrow { display: flex; gap: 8px; margin-top: 10px; }
+  .navrow button { flex: 1; height: 54px; border-radius: 14px; display: grid; place-items: center; background: var(--card2); border: 1px solid var(--line2); color: #e3e8f4; }
+  .navrow button:active { background: var(--line2); }
+  .acts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
+  .acts button { height: 60px; border-radius: 14px; background: var(--card2); border: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: var(--muted); }
+  .acts button svg { color: #e3e8f4; }
+  .acts button:active { background: var(--line2); }
+  .menu h4 { margin: 14px 4px 8px; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+  .seg { display: flex; gap: 4px; padding: 4px; background: var(--bg); border-radius: 12px; border: 1px solid var(--line); }
+  .seg button { flex: 1; padding: 8px 4px; border-radius: 9px; font-size: 13px; color: var(--muted); line-height: 1.2; }
+  .seg button small { display: block; font-size: 10.5px; color: var(--dim); margin-top: 2px; }
+  .seg button.on { background: var(--card2); color: var(--text); box-shadow: 0 1px 0 rgba(255,255,255,.06) inset; }
+  .seg button.on small { color: var(--muted); }
+  .mnote { font-size: 12px; color: var(--dim); margin: 6px 4px 0; }
+  .tg { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 4px; font-size: 14px; }
+  .tg small { display: block; color: var(--dim); font-size: 12px; }
+  .sw { position: relative; width: 46px; height: 28px; flex: none; }
+  .sw input { opacity: 0; position: absolute; inset: 0; margin: 0; z-index: 1; cursor: pointer; }
+  .sw span { position: absolute; inset: 0; border-radius: 14px; background: var(--line2); transition: background .2s; }
+  .sw span::after { content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform .2s; }
+  .sw input:checked + span { background: var(--accent); }
+  .sw input:checked + span::after { transform: translateX(18px); }
+
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 9; padding: 14px calc(var(--sar) + 14px) calc(var(--sab) + 14px) calc(var(--sal) + 14px);
+    background: var(--card); border-top: 1px solid var(--line); border-radius: 20px 20px 0 0; box-shadow: 0 -20px 40px rgba(0,0,0,.5);
+    transform: translateY(110%); transition: transform .22s ease; }
+  .sheet:not(.open) { visibility: hidden; transition: transform .22s ease, visibility 0s .22s; }
+  .sheet.open { transform: none; }
+  .sheet .hint { font-size: 12px; color: var(--muted); margin: 0 2px 8px; display: flex; align-items: center; gap: 6px; }
+  .sheet .hint b { color: var(--ok); }
+  .sheet.live .manual-only, .sheet:not(.live) .live-only { display: none; }
+  .sheet .grip { width: 38px; height: 4px; border-radius: 2px; background: var(--line2); margin: 0 auto 12px; }
+  .sheet .row { gap: 8px; }
+  .sheet .inp { height: 48px; font-size: 16px; }
+  .kbtn { height: 48px; padding: 0 16px; border-radius: 13px; background: var(--card2); border: 1px solid var(--line2); font-weight: 600; white-space: nowrap; }
+  .kbtn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .keys { display: flex; gap: 8px; margin-top: 10px; }
+  .keys .kbtn { flex: 1; height: 42px; font-weight: 500; font-size: 14px; }
+
+  #toast { position: fixed; left: 50%; top: calc(var(--sat) + 20px); transform: translate(-50%, -20px); opacity: 0; z-index: 10;
+    background: rgba(28,33,44,.96); border: 1px solid var(--line2); padding: 10px 16px; border-radius: 12px; font-size: 14px;
+    transition: opacity .2s, transform .2s; pointer-events: none; max-width: calc(100% - 32px); text-align: center; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  @media (min-width: 760px) { #home { padding-top: 10vh; } }
+  @media (orientation: landscape) and (max-height: 540px) {
+    body.shownav #vbox { bottom: 0; right: calc(var(--sar) + 64px); }
+    body.shownav .minibar { left: auto; right: calc(var(--sar) + 6px); top: 50%; bottom: auto; transform: translateY(-50%); flex-direction: column; }
+    .minibar button { width: 52px; height: 52px; }
+    .menu { bottom: 8px; max-height: calc(100% - 16px); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ================= CONNECT ================= -->
+<section id="home">
+  <div class="wrap">
+    <div class="brand">
+      <div class="logo"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg></div>
+      <div><h1>Remote Screen</h1><p>Điều khiển máy Android từ xa</p></div>
+      <button class="syncpill" id="syncBtn" aria-label="Đồng bộ bản mới" title="Đồng bộ bản mới"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/></svg><span id="syncLbl">Đồng bộ</span></button>
+    </div>
+    <div class="updbar hidden" id="updbar"><span id="updtxt">Có bản mới</span><button id="updgo">Cập nhật</button></div>
+
+    <div class="card">
+      <h2>Kết nối thiết bị</h2>
+      <p class="sub">Nhập ID và mật khẩu hiển thị trong app Remote Screen trên máy Android.</p>
+      <div class="field">
+        <label for="id">ID thiết bị</label>
+        <input id="id" class="inp" inputmode="numeric" autocomplete="off" autocorrect="off" spellcheck="false" name="rs-device-code" data-lpignore="true" data-form-type="other" placeholder="Nhập ID" maxlength="11">
+      </div>
+      <div class="field">
+        <label for="pw">Mật khẩu</label>
+        <div class="pwbox">
+          <input id="pw" class="inp masked" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" name="rs-device-pin" data-lpignore="true" data-form-type="other" placeholder="Nhập mật khẩu">
+          <button class="eye" id="eye" aria-label="Hiện mật khẩu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        </div>
+      </div>
+      <label class="check"><input type="checkbox" id="remember" checked> Ghi nhớ mật khẩu trên trình duyệt này</label>
+      <button class="btn" id="go"><span id="golbl">Kết nối</span></button>
+      <div class="msg" id="err"></div>
+    </div>
+
+    <div class="section-t">Gần đây</div>
+    <div class="recent" id="recent"></div>
+
+    <div class="foot"><span id="hint">Mẹo: trên iPhone bấm <b>Chia sẻ → Thêm vào MH chính</b> để mở như một app.<br></span>
+      <a href="remote-screen.apk">Tải app cho máy Android</a></div>
+  </div>
+</section>
+
+<!-- ================= SESSION ================= -->
+<section id="session" class="hidden">
+  <div id="vbox">
+    <video id="video" autoplay playsinline muted tabindex="0"></video>
+    <div id="cursor" class="hidden"></div>
+    <canvas id="loupe" class="hidden" width="120" height="120"></canvas>
+  </div>
+  <div class="overlay" id="ov"><div class="spin"></div><div id="ovtxt">Đang chờ hình ảnh…</div></div>
+
+  <button id="fab" aria-label="Mở bảng điều khiển"><span class="dot" id="dot"></span></button>
+
+  <div class="minibar hidden" id="minibar">
+    <button data-key="back" aria-label="Quay lại"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M17 4.5v15L5 12z"/></svg></button>
+    <button data-key="home" aria-label="Màn hình chính"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="7.5"/></svg></button>
+    <button data-key="recents" aria-label="Đa nhiệm"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg></button>
+  </div>
+
+  <div class="minibar2 hidden" id="mousebar">
+    <button id="mdbl" aria-label="Nhấn đúp"><b>×2</b></button>
+    <button id="mrc" aria-label="Chuột phải"><b>R</b></button>
+    <button id="mscrollup" aria-label="Cuộn lên"><b>▲</b></button>
+    <button id="mscrolldown" aria-label="Cuộn xuống"><b>▼</b></button>
+  </div>
+
+  <div class="alertbar hidden" id="alertbar"><span id="alerttxt"></span><button class="kbtn" id="alertOpen">Mở game</button><button class="kbtn" id="alertClose">✕</button></div>
+  <div class="scrim hidden" id="scrim"></div>
+  <div class="menu hidden" id="menu">
+    <div class="mhead">
+      <div class="chip">
+        <span class="idt" id="sid">—</span>
+        <button class="iconbtn" id="copySid" aria-label="Copy ID"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+      </div>
+      <span class="grow"></span>
+      <button class="tb" id="menuClose" aria-label="Đóng"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></button>
+    </div>
+    <div class="status" id="status">
+      <div class="srow"><span class="badge" id="badge">…</span><span id="stext">Đang kết nối…</span><span class="qlabel" id="qlabel"></span></div>
+      <div class="srow" id="qrow"><div class="bar" id="qbarw"><i id="qbar"></i></div><span id="quota"></span></div>
+    </div>
+    <div class="navrow">
+      <button data-key="back" aria-label="Quay lại"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M17 4.5v15L5 12z"/></svg></button>
+      <button data-key="home" aria-label="Màn hình chính"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="7.5"/></svg></button>
+      <button data-key="recents" aria-label="Đa nhiệm"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg></button>
+    </div>
+    <div class="acts">
+      <button id="kb"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M9 15h6"/></svg>Bàn phím</button>
+      <button id="notif"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>Thông báo</button>
+      <button id="fs"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Toàn MH</button>
+      <button id="bye" style="color:var(--bad)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--bad)" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>Ngắt</button>
+    </div>
+
+    <div id="gameOnly" class="hidden">
+      <h4>Chơi game</h4>
+      <label class="tg"><span>Chế độ game<small>Chạm nhiều ngón cùng lúc, kéo theo thời gian thực (2 ngón không phóng to)</small></span><span class="sw"><input type="checkbox" id="optGame"><span></span></span></label>
+      <div class="mnote" id="gstat"></div>
+
+      <h4>Auto click / Macro</h4>
+      <div class="gbtns"><button class="kbtn" id="recBtn">● Ghi thao tác</button><button class="kbtn" id="autoBtn">Auto chạm 1 điểm</button></div>
+      <div class="savebox hidden" id="saveBox">
+        <label for="mname">Tên macro</label>
+        <input class="inp" id="mname" maxlength="30" autocomplete="off">
+        <div class="row"><select id="mloops"><option value="0">Lặp mãi</option><option value="1">Chạy 1 lần</option><option value="5">Lặp 5 lần</option><option value="10">Lặp 10 lần</option><option value="50">Lặp 50 lần</option></select>
+          <select id="mgap"><option value="300">Nghỉ 0,3 giây</option><option value="1000" selected>Nghỉ 1 giây</option><option value="3000">Nghỉ 3 giây</option><option value="10000">Nghỉ 10 giây</option><option value="60000">Nghỉ 1 phút</option></select></div>
+        <div class="mnote" id="minfo" style="margin:0"></div>
+        <div class="row"><button class="kbtn" id="mcancel" style="flex:1">Huỷ</button><button class="kbtn primary" id="msave" style="flex:2">Lưu vào máy Android</button></div>
+      </div>
+      <div class="mlist" id="mlist"></div>
+      <div class="mnote">Macro chạy ngay trên máy Android: tắt iPhone hay ngắt kết nối vẫn chạy. Dừng ở đây hoặc ở thanh thông báo Android.</div>
+
+      <h4>Theo dõi game</h4>
+      <label class="tg"><span>Báo khi game bị thoát<small id="watchInfo">Ghim app đang mở trên máy Android</small></span><span class="sw"><input type="checkbox" id="optWatch"><span></span></span></label>
+      <label class="tg"><span>Tự mở lại game khi bị thoát<small>Macro tự tạm dừng khi game không ở màn hình chính</small></span><span class="sw"><input type="checkbox" id="optRelaunch"><span></span></span></label>
+      <label class="tg"><span>Giữ màn hình Android luôn sáng<small>Sáng mờ để đỡ tốn pin · áp dụng từ lần chia sẻ sau</small></span><span class="sw"><input type="checkbox" id="optKeep" checked><span></span></span></label>
+    </div>
+    <div class="mnote hidden" id="oldApp">Cập nhật app Android lên bản mới để dùng chế độ game, auto click và theo dõi game.</div>
+
+    <div id="touchOpts">
+    <h4>Cách chạm</h4>
+    <div class="seg" id="tseg">
+      <button data-t="direct">Chạm trực tiếp<small>bấm đâu ăn đó</small></button>
+      <button data-t="pad">Chuột (trackpad)<small>chính xác nhất</small></button>
+    </div>
+    <div class="mnote" id="tnote"></div>
+    <label class="tg"><span>Kính lúp khi giữ ngón tay<small>Giữ ~0,3 giây để soi chỗ bấm, nhả tay để bấm</small></span><span class="sw"><input type="checkbox" id="optLoupe"><span></span></span></label>
+    </div>
+    <label class="tg"><span>Hiện điểm chạm<small>Vòng tròn đánh dấu chỗ vừa bấm</small></span><span class="sw"><input type="checkbox" id="optRipple"><span></span></span></label>
+    <label class="tg"><span>Luôn hiện 3 nút điều hướng<small>Thanh Back · Home · Đa nhiệm nhỏ ở cạnh màn hình</small></span><span class="sw"><input type="checkbox" id="optNav"><span></span></span></label>
+
+    <h4>Mạng & độ trễ</h4>
+    <button class="kbtn" id="netTest" style="width:100%;height:44px">Kiểm tra mạng & chọn máy chủ nhanh nhất</button>
+    <div class="mnote" id="netOut" style="white-space:pre-line"></div>
+
+    <h4>Phiên bản & cập nhật</h4>
+    <div class="mnote" id="verInfo" style="margin-top:0"></div>
+    <div class="gbtns" style="margin-top:8px"><button class="kbtn" id="updWeb">Tải lại trang</button><button class="kbtn" id="updApp">Cập nhật app Android</button></div>
+
+    <h4>Phóng to</h4>
+    <div class="row"><span class="mnote" style="margin:0" id="zlabel">1.0× · dùng 2 ngón để phóng to/kéo hình</span><button class="kbtn" id="zreset" style="height:38px">Đặt lại</button></div>
+
+    <h4>Chất lượng hình</h4>
+    <div class="seg" id="qseg">
+      <button data-q="eco">Tiết kiệm<small>15 fps</small></button>
+      <button data-q="bal">Cân bằng<small>30 fps</small></button>
+      <button data-q="hi">Nét<small>60 fps · sắc nét</small></button>
+      <button data-q="max">Mượt<small>60 fps · nhẹ</small></button>
+    </div>
+    <div class="mnote" id="qnote"></div>
+    <h4>Xoay hình</h4>
+    <div class="seg" id="rseg">
+      <button data-r="auto">Tự động</button>
+      <button data-r="0">Đứng</button>
+      <button data-r="90">Nằm ngang</button>
+    </div>
+    <div class="mnote" id="pcnote">Máy tính: chuột phải = Back · lăn chuột = cuộn · gõ phím trực tiếp · Ctrl+V để dán chữ.</div>
+  </div>
+
+  <div class="sheet" id="sheet">
+    <div class="grip"></div>
+    <div class="hint live-only"><b>●</b> Máy Android đang chọn một ô nhập liệu. Chạm vào ô dưới để mở bàn phím, chữ gõ được đồng bộ ngay.</div>
+    <div class="row">
+      <input id="textin" class="inp" placeholder="Gõ chữ gửi vào ô đang chọn…" autocomplete="off" autocorrect="off" autocapitalize="off">
+      <button class="kbtn primary manual-only" id="sendtext">Gửi</button>
+    </div>
+    <div class="keys">
+      <button class="kbtn manual-only" data-key="backspace">⌫ Xoá</button>
+      <button class="kbtn" data-key="enter">↵ Enter</button>
+      <button class="kbtn" id="sheetClose">Đóng</button>
+    </div>
+  </div>
+</section>
+
+<div id="updbanner" class="hidden"><span id="ubTxt"></span><button class="go" id="ubGo">Cập nhật</button><button id="ubX" aria-label="Ẩn">✕</button></div>
+<div id="toast"></div>
+
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const video = $('#video'), vbox = $('#vbox');
+  const STORE = 'rs.recent.v1';
+  const QUALITY = {
+    eco: { fps: 15, long: 720, br: 700000, label: 'Tiết kiệm' },
+    bal: { fps: 30, long: 1280, br: 2500000, label: 'Cân bằng' },
+    hi: { fps: 60, long: 1600, br: 8000000, label: 'Nét' },
+    max: { fps: 60, long: 720, br: 3000000, label: 'Mượt' },
+  };
+  const RECONNECT_MS = 600000;   // kiên nhẫn 10 phút trước khi bỏ cuộc
+  let reconnectLimit = RECONNECT_MS;
+
+  let ws, pc, dc, statsTimer, usageTimer, iceServers = [], current = null;
+  let inSession = false, reconnecting = false, reconnectSince = 0, retryTimer = null, discTimer = null, wakeTries = 0;
+  let relay = null, lastKbps = 0, usage = null, wakeLock = null, sessionRelayBytes = 0;
+  let imeActive = false, sheetByIme = false, liveTimer = null;
+
+  // ---------- helpers ----------
+  const fmtId = (id) => String(id).replace(/\D/g, '').slice(0, 9).replace(/(\d{3})(?=\d)/g, '$1 ');
+  const rawId = (s) => String(s).replace(/\D/g, '');
+  const pref = {
+    get(k, d) { try { const v = localStorage.getItem('rs.' + k); return v == null ? d : v; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('rs.' + k, v); } catch {} },
+  };
+  let toastT;
+  function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2200); }
+  function setErr(m, info) { const e = $('#err'); e.textContent = m || ''; e.classList.toggle('info', !!info); }
+  async function copy(text) {
+    try { await navigator.clipboard.writeText(text); }
+    catch {
+      const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch {} ta.remove();
+    }
+    toast('Đã copy ID ' + fmtId(text));
+  }
+  const store = {
+    get() { try { return JSON.parse(localStorage.getItem(STORE)) || []; } catch { return []; } },
+    set(v) { try { localStorage.setItem(STORE, JSON.stringify(v)); } catch {} },
+  };
+  function ago(t) {
+    const s = (Date.now() - t) / 1000;
+    if (s < 60) return 'vừa xong';
+    if (s < 3600) return Math.floor(s / 60) + ' phút trước';
+    if (s < 86400) return Math.floor(s / 3600) + ' giờ trước';
+    return Math.floor(s / 86400) + ' ngày trước';
+  }
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const wsUrl = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${location.pathname.replace(/[^/]*$/, '')}ws`;
+
+  // ---------- recent devices ----------
+  function renderRecent() {
+    const list = store.get();
+    const box = $('#recent');
+    if (!list.length) { box.innerHTML = '<div class="empty">Chưa có thiết bị nào. Kết nối lần đầu để lưu vào đây.</div>'; return; }
+    const sorted = list.slice().sort((a, b) => (b.pin ? 1 : 0) - (a.pin ? 1 : 0) || b.last - a.last);
+    box.innerHTML = sorted.map((d) => `
+      <div class="dev${d.pin ? ' pinned' : ''}" data-id="${esc(d.id)}">
+        <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg></div>
+        <button class="meta" data-act="open"><div class="nm">${esc(d.name || fmtId(d.id))}</div><div class="tm">${d.name ? esc(fmtId(d.id)) + ' · ' : ''}${esc(ago(d.last))}${d.pw && !d.name ? ' · đã lưu mật khẩu' : ''}</div></button>
+        <button class="iconbtn${d.pin ? ' on' : ''}" data-act="pin" aria-label="Ghim"><svg width="18" height="18" viewBox="0 0 24 24" fill="${d.pin ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 2 3 6.5 7 .8-5.2 4.8 1.5 7L12 17.6 5.7 21l1.5-7L2 9.3l7-.8z"/></svg></button>
+        <button class="iconbtn" data-act="name" aria-label="Đặt tên"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+        <button class="iconbtn" data-act="copy" aria-label="Copy ID"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+        <button class="iconbtn" data-act="del" aria-label="Xoá"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
+      </div>`).join('');
+  }
+  $('#recent').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const id = b.closest('.dev').dataset.id;
+    const d = store.get().find((x) => x.id === id);
+    if (b.dataset.act === 'copy') return copy(id);
+    if (b.dataset.act === 'del') { store.set(store.get().filter((x) => x.id !== id)); return renderRecent(); }
+    if (b.dataset.act === 'pin') { store.set(store.get().map((x) => (x.id === id ? { ...x, pin: !x.pin } : x))); return renderRecent(); }
+    if (b.dataset.act === 'name') {
+      const row = b.closest('.dev'); const meta = row.querySelector('.meta');
+      const inp = document.createElement('input');
+      inp.className = 'inp rename'; inp.maxLength = 30; inp.placeholder = 'Tên / ghi chú (vd: Giả lập acc 1)'; inp.value = (d && d.name) || '';
+      meta.replaceWith(inp); inp.focus();
+      const save = () => { const v = inp.value.trim(); store.set(store.get().map((x) => (x.id === id ? { ...x, name: v } : x))); renderRecent(); };
+      inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') inp.blur(); if (ev.key === 'Escape') { inp.value = (d && d.name) || ''; inp.blur(); } });
+      inp.addEventListener('blur', save);
+      return;
+    }
+    $('#id').value = fmtId(id); $('#pw').value = (d && d.pw) || '';
+    if (d && d.pw) start(); else $('#pw').focus();
+  });
+  function remember(id, pw) {
+    const keep = $('#remember').checked;
+    const all = store.get();
+    const old = all.find((x) => x.id === id) || {};
+    const list = all.filter((x) => x.id !== id);
+    list.unshift({ ...old, id, pw: keep ? pw : '', last: Date.now() });
+    // keep every pinned device, plus the most recent others
+    const pinned = list.filter((x) => x.pin), rest = list.filter((x) => !x.pin);
+    store.set([...pinned, ...rest.slice(0, Math.max(0, 15 - pinned.length))]);
+  }
+
+  // ---------- connect ----------
+  $('#id').addEventListener('input', (e) => { const el = e.target; el.value = fmtId(el.value); });
+  $('#eye').addEventListener('click', () => $('#pw').classList.toggle('masked'));
+
+  function busy(on, label) {
+    $('#go').disabled = on;
+    $('#golbl').textContent = label || 'Kết nối';
+    const sp = $('#go .spin');
+    if (on && !sp) $('#go').insertAdjacentHTML('afterbegin', '<span class="spin"></span>');
+    if (!on && sp) sp.remove();
+  }
+
+  async function loadConfig() {
+    try {
+      const r = await fetch('config', { cache: 'no-store' });
+      const j = await r.json();
+      iceServers = j.iceServers; probeCfg = j.relays && j.relays.length ? j.relays : null;
+    } catch { iceServers = [{ urls: 'stun:stun.l.google.com:19302' }]; probeCfg = null; }
+    allIce = iceServers;
+    applyTurn();
+  }
+
+  // ---------- TURN relay with the lowest ping ----------
+  // The free provider has relay servers on several continents. Measure them from here and use only the
+  // fastest one (the Android side gets the same one through the server), instead of a random far one.
+  let probeCfg = null, allIce = [], turnPick = null;
+  const PICK_KEY = 'turnpick2', PICK_TTL = 30 * 60e3;
+  const shortHost = (u) => (/^turns?:([^:?]+)/.exec(u || '') || [])[1] || '';
+  const relayOf = (url) => (probeCfg || []).find((r) => r.url === url);
+  function probeOne(url, ms) {
+    return new Promise((res) => {
+      let pc, done = false;
+      const t0 = performance.now();
+      const fin = (v) => { if (done) return; done = true; try { pc && pc.close(); } catch {} res(v); };
+      const r = relayOf(url);
+      try { pc = new RTCPeerConnection({ iceServers: [{ urls: url, username: r.ice.username, credential: r.ice.credential }], iceTransportPolicy: 'relay' }); }
+      catch { return res(null); }
+      pc.createDataChannel('p');
+      // a relay candidate needs 2 round trips (auth challenge + allocation)
+      pc.onicecandidate = (e) => { if (e.candidate && / typ relay /.test(e.candidate.candidate)) fin(Math.max(1, Math.round((performance.now() - t0) / 2))); };
+      pc.createOffer().then((o) => pc.setLocalDescription(o)).catch(() => fin(null));
+      setTimeout(() => fin(null), ms || 3000);
+    });
+  }
+  async function measureTurns(ms) {
+    if (!probeCfg) return [];
+    const urls = probeCfg.map((r) => r.url);
+    const r = await Promise.all(urls.map((u) => probeOne(u, ms)));
+    const out = urls.map((u, i) => ({ url: u, ms: r[i] }));
+    // Metered only has a small free quota: prefer the others unless Metered is clearly faster.
+    const cost = (x) => x.ms + ((relayOf(x.url) || {}).name === 'Metered' ? 25 : 0);
+    return out.sort((a, b) => (a.ms == null) - (b.ms == null) || cost(a) - cost(b));
+  }
+  async function pickTurn(force) {
+    if (!probeCfg) return null;
+    let c = null;
+    try { c = JSON.parse(pref.get(PICK_KEY, 'null')); } catch {}
+    if (!force && c && Date.now() - c.at < PICK_TTL && relayOf(c.url)) { turnPick = c; applyTurn(); return c; }
+    const list = await measureTurns(2500);
+    const best = list.find((x) => x.ms != null);
+    turnPick = best ? { url: best.url, ms: best.ms, at: Date.now(), list } : null;
+    if (turnPick) pref.set(PICK_KEY, JSON.stringify(turnPick)); else pref.set(PICK_KEY, 'null');
+    applyTurn();
+    return turnPick;
+  }
+  function applyTurn() {
+    const r = turnPick && relayOf(turnPick.url);
+    if (!r) { iceServers = allIce; return; }
+    iceServers = [{ urls: 'stun:stun.l.google.com:19302' }, r.ice];
+  }
+  function forgetTurn() { turnPick = null; pref.set(PICK_KEY, 'null'); iceServers = allIce; }
+
+  async function start() {
+    if ($('#go').disabled) return;
+    setErr('');
+    const id = rawId($('#id').value);
+    const password = $('#pw').value;
+    if (!/^\d{9}$/.test(id)) return setErr('ID gồm 9 chữ số');
+    if (password.length < 6) return setErr('Mật khẩu tối thiểu 6 ký tự');
+    busy(true, 'Đang kết nối…');
+    const slow = setTimeout(() => setErr('Đang đánh thức máy chủ, lần đầu có thể mất khoảng 30–50 giây…', true), 3500);
+    await loadConfig();
+    if (probeCfg) { setErr('Đang chọn máy chủ trung chuyển gần nhất…', true); await pickTurn(false); }
+    clearTimeout(slow);
+    setErr('');
+    current = { id, password }; wakeTries = 0;
+    connect();
+  }
+
+  function connect() {
+    try { ws && (ws.onclose = null, ws.close()); } catch {}
+    ws = new WebSocket(wsUrl());
+    const me = ws;
+    ws.onopen = () => me.send(JSON.stringify({ type: 'connect', id: current.id, password: current.password, turn: turnPick ? turnPick.url : undefined }));
+    ws.onmessage = (e) => { if (ws === me) onSignaling(JSON.parse(e.data)); };
+    ws.onclose = () => {
+      if (ws !== me) return;
+      if (inSession) scheduleReconnect('Mất kết nối tới máy chủ');
+      else { busy(false); if (!$('#err').textContent) setErr('Không kết nối được máy chủ'); }
+    };
+  }
+
+  async function onSignaling(m) {
+    if (m.type === 'error') {
+      if (m.code === 'taken_over') return endSession('Máy này vừa được điều khiển từ một thiết bị/tab khác.');
+      if (m.code === 'waking') {   // máy đang ở chế độ chờ: đang được đánh thức, kiên nhẫn thử lại
+        wakeTries++;
+        if (wakeTries > 40) { busy(false); setErr('Máy Android chưa bật dậy được. Kiểm tra máy còn mở và đã bật "Tự đánh thức".'); return; }
+        if (!inSession) busy(true, 'Đang đánh thức máy…');
+        setErr('Đang đánh thức máy Android, chờ chút…', true);
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(() => { if (inSession) scheduleReconnect('Đang đánh thức máy Android…'); else connect(); }, 2500);
+        return;
+      }
+      if (inSession) return scheduleReconnect(m.code === 'denied' ? 'Đang chờ máy Android kết nối lại…' : 'Đang kết nối lại…');
+      const map = { denied: 'Sai ID hoặc mật khẩu, hoặc máy Android chưa bật chia sẻ', busy: 'Máy này đang được người khác điều khiển', rate_limited: 'Máy chủ đang bận, thử lại' };
+      setErr(map[m.code] || m.message); busy(false); return;
+    }
+    if (m.type === 'connected') {
+      if (!inSession) { remember(current.id, current.password); openSession(); }
+      reconnecting = false; reconnectSince = 0; reconnectLimit = RECONNECT_MS; rxBytes = 0; rxAt = 0; wakeTries = 0;
+      showOverlay('Đang thiết lập kết nối…');
+      createPeer();
+      return;
+    }
+    if (m.type === 'peer-left') return scheduleReconnect('Máy Android tạm mất kết nối, đang chờ…');
+    if (m.type === 'signal' && pc) {
+      const d = m.data;
+      if (d.sdp) {
+        await pc.setRemoteDescription(d.sdp);
+        preferH264();
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: 'signal', data: { sdp: pc.localDescription } }));
+      } else if (d.candidate) {
+        try { await pc.addIceCandidate(d.candidate); } catch {}
+      }
+    }
+  }
+
+  function showOverlay(text, dim) {
+    $('#ov').classList.remove('hidden');
+    $('#ov').classList.toggle('dim', !!dim);
+    $('#ovtxt').textContent = text;
+  }
+
+  function openSession() {
+    document.body.classList.add('insession');
+    inSession = true;
+    $('#home').classList.add('hidden');
+    $('#session').classList.remove('hidden');
+    const named = store.get().find((x) => x.id === current.id);
+    $('#sid').textContent = named && named.name ? named.name + ' · ' + fmtId(current.id) : fmtId(current.id);
+    $('#dot').classList.remove('ok');
+    $('#stext').textContent = 'Đang kết nối…'; $('#quota').textContent = ''; $('#qlabel').textContent = '';
+    $('#badge').className = 'badge'; $('#badge').textContent = '…';
+    relay = null; usage = null; sessionRelayBytes = 0;
+    refreshUsage();
+    resetZoom();
+    busy(false);
+    keepAwake();
+    syncMenu();
+    applyNav();
+    placeFab();
+    cur = { x: 0.5, y: 0.5 };
+    resetGame();
+  }
+
+  function closePeer() {
+    clearInterval(statsTimer); clearTimeout(discTimer);
+    try { dc && dc.close(); } catch {}
+    try { pc && pc.close(); } catch {}
+    pc = dc = null;
+  }
+
+  function scheduleReconnect(text) {
+    if (!inSession) return;
+    if (!reconnectSince) reconnectSince = Date.now();
+    if (Date.now() - reconnectSince > reconnectLimit) return endSession('Không kết nối lại được. Mở app Remote Screen trên máy Android, kiểm tra còn đang chia sẻ không rồi thử lại.');
+    reconnecting = true;
+    closePeer();
+    $('#dot').classList.remove('ok');
+    showOverlay(text || 'Đang kết nối lại…', true);
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(async () => { if (!inSession) return; await loadConfig(); connect(); }, 2500);
+  }
+
+  // H.264 is hardware-encoded on almost every Android phone and hardware-decoded on iPhone:
+  // much higher and steadier fps than VP8, which many phones encode in software.
+  function preferH264() {
+    try {
+      const caps = RTCRtpReceiver.getCapabilities && RTCRtpReceiver.getCapabilities('video');
+      if (!caps) return;
+      const rank = (c) => (/h264/i.test(c.mimeType) ? (/42e01f|42001f/.test(c.sdpFmtpLine || '') ? 0 : 1) : /vp8/i.test(c.mimeType) ? 2 : 3);
+      const codecs = caps.codecs.slice().sort((a, b) => rank(a) - rank(b));
+      pc.getTransceivers().forEach((t) => {
+        if (t.receiver.track && t.receiver.track.kind === 'video' && t.setCodecPreferences) t.setCodecPreferences(codecs);
+      });
+    } catch (e) { console.warn('codec pref', e); }
+  }
+
+  function createPeer() {
+    closePeer();
+    pc = new RTCPeerConnection({ iceServers });
+    const me = pc;
+    pc.onicecandidate = (e) => { if (e.candidate && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'signal', data: { candidate: e.candidate } })); };
+    pc.ondatachannel = (e) => {
+      dc = e.channel;
+      ctlSeq = Math.floor(Math.random() * 1e9); ackSeen = false;
+      ctlPending.forEach((st) => clearTimeout(st.timer)); ctlPending.clear();
+      dc.onopen = () => sendQuality();
+      dc.onmessage = (ev) => {
+        try {
+          const m = JSON.parse(ev.data);
+          if (m.t === 'ack') return ackCtl(m.seq);
+          if (m.t === 'warn') {
+            if (m.k === 'no_a11y') toast('Bật "Trợ năng" (Accessibility) cho app trên điện thoại để điều khiển được');
+            else if (m.msg) toast(m.msg);
+            return;
+          }
+          if (m.t === 'ime') onIme(m); else onDeviceMsg(m);
+        } catch (err) { console.warn(err); }
+      };
+    };
+    pc.ontrack = (e) => {
+      video.srcObject = e.streams[0];
+      const r = e.receiver;
+      try { if ('jitterBufferTarget' in r) r.jitterBufferTarget = 0; } catch {}
+      try { if ('playoutDelayHint' in r) r.playoutDelayHint = 0; } catch {}
+      video.play().catch(() => {});
+      showOverlay('Đang chờ hình ảnh…');
+    };
+    pc.onconnectionstatechange = () => {
+      if (pc !== me) return;
+      const s = pc.connectionState;
+      if (s === 'connected') { clearTimeout(discTimer); $('#dot').classList.add('ok'); if (video.videoWidth) $('#ov').classList.add('hidden'); }
+      if (s === 'disconnected') {
+        $('#dot').classList.remove('ok'); showOverlay('Mạng chập chờn, đang thử lại…', true);
+        clearTimeout(discTimer); discTimer = setTimeout(() => { if (pc === me && pc.connectionState !== 'connected') scheduleReconnect(); }, 6000);
+      }
+      if (s === 'failed') { if (turnPick) forgetTurn(); scheduleReconnect('Không truyền được hình ảnh, đang thử lại…'); }
+    };
+    statsTimer = setInterval(updateStats, 1000);
+  }
+  video.addEventListener('loadeddata', () => { $('#ov').classList.add('hidden'); layout(); placeCursor(); });
+  video.addEventListener('resize', layout);
+
+  // ---------- quality ----------
+  // Cloudflare/ExpressTURN give 1000 GB a month: no need to drop to 15 fps on TURN any more.
+  // Only the small Metered trial quota is still spared.
+  function qualityKey() {
+    const q = pref.get('quality2', '');
+    if (q && QUALITY[q]) return q;
+    const viaMetered = relay && turnPick && relayOf(turnPick.url) && relayOf(turnPick.url).name === 'Metered';
+    // Kết nối thẳng (xanh): để NÉT full độ phân giải. Qua máy trung chuyển: nhẹ hơn cho đỡ trễ.
+    return viaMetered ? 'eco' : relay ? 'max' : 'hi';
+  }
+  function sendQuality() {
+    const q = QUALITY[qualityKey()];
+    sendCtl({ t: 'quality', fps: q.fps, long: q.long, br: q.br });   // có ACK + gửi lại nếu rơi
+    syncMenu();
+    $('#qlabel').textContent = QUALITY[qualityKey()].label;
+  }
+
+  // ---------- stats & TURN quota ----------
+  let last = { bytes: 0, t: 0 }, pathInfo = null, rxBytes = 0, rxAt = 0;
+  let laidW = 0, laidH = 0, laidBox = '';
+  function unscroll() {
+    // iOS Safari often leaves the page scrolled after the keyboard closes: the picture stays put but
+    // touches are then shifted by that amount. Pin the page back to the top.
+    if (inSession && (window.scrollY || window.scrollX || document.documentElement.scrollTop)) { window.scrollTo(0, 0); layout(); }
+  }
+  async function updateStats() {
+    unscroll();
+    if (!pc) return;
+    // iOS sometimes skips the video "resize" event when the phone rotates: re-layout if anything changed
+    const B = vbox.getBoundingClientRect(), box = B.width + 'x' + B.height;
+    if (video.videoWidth && (video.videoWidth !== laidW || video.videoHeight !== laidH || box !== laidBox)) {
+      laidW = video.videoWidth; laidH = video.videoHeight; laidBox = box; layout();
+    }
+    const stats = await pc.getStats();
+    let rtt = null, fps = null, bytes = null, isRelay = null, pairId = null, codecId = null;
+    stats.forEach((s) => {
+      if (s.type === 'transport' && s.selectedCandidatePairId) pairId = s.selectedCandidatePairId;
+      if (s.type === 'inbound-rtp' && s.kind === 'video') { fps = s.framesPerSecond; bytes = s.bytesReceived; codecId = s.codecId; }
+    });
+    stats.forEach((s) => {
+      if (s.type === 'candidate-pair' && (s.id === pairId || (!pairId && s.nominated && s.state === 'succeeded'))) {
+        if (s.currentRoundTripTime != null) rtt = Math.round(s.currentRoundTripTime * 1000);
+        const lc = stats.get(s.localCandidateId), rc = stats.get(s.remoteCandidateId);
+        isRelay = !!((lc && lc.candidateType === 'relay') || (rc && rc.candidateType === 'relay'));
+        pathInfo = { lt: lc && lc.candidateType, rt: rc && rc.candidateType, proto: lc && (lc.relayProtocol || lc.protocol),
+          url: lc && lc.url, rtt: s.currentRoundTripTime != null ? Math.round(s.currentRoundTripTime * 1000) : null };
+      }
+    });
+    const now = performance.now();
+    if (bytes != null && last.t && bytes >= last.bytes) {
+      lastKbps = Math.round(((bytes - last.bytes) * 8) / (now - last.t));
+      if (relay) sessionRelayBytes += bytes - last.bytes;
+    }
+    if (bytes != null) {
+      if (bytes > rxBytes) { rxBytes = bytes; rxAt = now; }
+      else if (pc && pc.connectionState === 'connected' && video.videoWidth && rxAt && now - rxAt > 7000) {
+        rxAt = now; return scheduleReconnect('Hình bị đứng, đang kết nối lại…');
+      }
+    }
+    if (bytes != null) last = { bytes, t: now };
+    if (isRelay !== null && isRelay !== relay) {
+      relay = isRelay;
+
+      sendQuality();
+      if (relay) refreshUsage();
+    }
+    const parts = [];
+    if (rtt != null) parts.push(rtt + ' ms');
+    if (fps != null) parts.push(Math.round(fps) + ' fps');
+    const cd = codecId && stats.get(codecId);
+    if (cd && cd.mimeType) parts.push(cd.mimeType.replace('video/', ''));
+    if (relay && pathInfo) {
+      const via = pathInfo.lt === 'relay' ? (turnPick && relayOf(turnPick.url) ? relayOf(turnPick.url).name + ' ' : '') + (shortHost(pathInfo.url) || (turnPick && shortHost(turnPick.url))) : 'phía Android';
+      parts.push('qua ' + (via || 'TURN') + (pathInfo.proto ? ' ' + String(pathInfo.proto).toUpperCase() : ''));
+    }
+    if (devStat && devStat.batt >= 0) parts.push('pin ' + devStat.batt + '%');
+    if (bytes != null) parts.push(lastKbps >= 1000 ? (lastKbps / 1000).toFixed(1) + ' Mbps' : lastKbps + ' kbps');
+    $('#stext').textContent = parts.join(' · ') || 'Đang kết nối…';
+    const bd = $('#badge');
+    bd.className = 'badge' + (relay === true ? ' turn' : relay === false ? ' p2p' : '');
+    bd.textContent = relay === true ? 'TURN' : relay === false ? 'P2P' : '…';
+    $('#dot').classList.toggle('turn', relay === true);
+    renderQuota();
+  }
+
+  async function refreshUsage() {
+    try { usage = await (await fetch('usage', { cache: 'no-store' })).json(); } catch { usage = null; }
+    renderQuota();
+  }
+  const fmtMB = (mb) => (mb >= 1024 ? (mb / 1024).toFixed(mb >= 10240 ? 0 : 1) + ' GB' : Math.round(mb) + ' MB');
+  function renderQuota() {
+    const el = $('#quota'), bw = $('#qbarw');
+    el.className = ''; bw.className = 'bar';
+    const sess = sessionRelayBytes / 1048576;
+    const sessTxt = sess >= 0.1 ? ` · phiên này ${sess < 10 ? sess.toFixed(1) : Math.round(sess)} MB` : '';
+    if (usage && usage.available && usage.quotaMB) {
+      bw.classList.remove('hidden');
+      const used = usage.usedMB == null ? null : usage.usedMB;
+      const name = usage.provider ? usage.provider + ' · ' : '';
+      if (used == null) {
+        $('#qbar').style.width = '100%';
+        el.textContent = `${name}gói ${fmtMB(usage.quotaMB)}/tháng${sessTxt}`;
+        return;
+      }
+      const left = Math.max(0, usage.quotaMB - used);
+      const pct = left / usage.quotaMB;
+      $('#qbar').style.width = Math.max(2, pct * 100) + '%';
+      let txt = `${name}còn ${fmtMB(left)}/${fmtMB(usage.quotaMB)}`;
+      if (relay && lastKbps > 30) {
+        const min = (left * 8 * 1024) / lastKbps / 60;
+        txt += ` · ≈ ${min >= 120 ? Math.round(min / 60) + ' giờ' : Math.max(0, Math.round(min)) + ' phút'}`;
+      } else if (relay === false) txt += ' · kết nối thẳng, không tốn';
+      el.textContent = txt;
+      if (pct < 0.03) { el.classList.add('bad'); bw.classList.add('bad'); }
+      else if (pct < 0.1) { el.classList.add('warn'); bw.classList.add('warn'); }
+    } else {
+      bw.classList.add('hidden');
+      el.textContent = relay === false ? 'Kết nối thẳng · không tốn dung lượng TURN' : relay ? `Đang đi qua TURN${sessTxt}` : '';
+    }
+  }
+
+  function endSession(msg) {
+    document.body.classList.remove('insession');
+    inSession = false; reconnecting = false; reconnectSince = 0;
+    clearTimeout(retryTimer); clearInterval(usageTimer);
+    closePeer();
+    try { ws && (ws.onclose = null, ws.close()); } catch {}
+    ws = null;
+    video.srcObject = null;
+    $('#sheet').classList.remove('open', 'live'); closeMenu(); hideLoupe(); cursorEl.classList.add('hidden'); $('#mousebar').classList.add('hidden');
+    document.body.classList.remove('shownav');
+    resetGame();
+    imeActive = false; sheetByIme = false;
+    $('#session').classList.add('hidden');
+    $('#home').classList.remove('hidden');
+    busy(false);
+    setErr(msg || '');
+    renderRecent();
+    releaseAwake();
+    try { if (document.fullscreenElement) document.exitFullscreen(); } catch {}
+  }
+
+  // ---------- keep the iPhone screen on ----------
+  async function keepAwake() {
+    try { if ('wakeLock' in navigator && !wakeLock && document.visibilityState === 'visible') { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } } catch {}
+  }
+  function releaseAwake() { try { wakeLock && wakeLock.release(); } catch {} wakeLock = null; }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && inSession) {
+      keepAwake();
+      if (pc && pc.connectionState !== 'connected') scheduleReconnect();
+    }
+  });
+
+  // ---------- layout: fit, rotate, zoom ----------
+  let rot = 0, zoom = 1, panX = 0, panY = 0, dispW = 0, dispH = 0;
+  function rotMode() { return pref.get('rotate', 'auto'); }
+  function layout() {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) return;
+    const B = vbox.getBoundingClientRect();
+    const m = rotMode();
+    if (m === 'auto') rot = ((B.height >= B.width) !== (vh >= vw)) ? 90 : 0;
+    else rot = Number(m) || 0;
+    const ew = rot ? vh : vw, eh = rot ? vw : vh;
+    const s = Math.min(B.width / ew, B.height / eh);
+    dispW = vw * s; dispH = vh * s;
+    clampPan();
+    video.style.width = dispW + 'px';
+    video.style.height = dispH + 'px';
+    video.style.left = (B.width - dispW) / 2 + 'px';
+    video.style.top = (B.height - dispH) / 2 + 'px';
+    video.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom}) rotate(${rot}deg)`;
+    $('#zlabel').textContent = zoom.toFixed(1) + '× · dùng 2 ngón để phóng to/kéo hình';
+    if (padMode()) placeCursor();
+  }
+  function clampPan() {
+    const B = vbox.getBoundingClientRect();
+    const ew = (rot ? dispH : dispW) * zoom, eh = (rot ? dispW : dispH) * zoom;
+    const mx = Math.max(0, (ew - B.width) / 2), my = Math.max(0, (eh - B.height) / 2);
+    panX = Math.min(mx, Math.max(-mx, panX));
+    panY = Math.min(my, Math.max(-my, panY));
+  }
+  function resetZoom() { zoom = 1; panX = panY = 0; layout(); }
+  window.addEventListener('resize', () => { layout(); placeFab(); });
+  window.addEventListener('orientationchange', () => setTimeout(() => { layout(); placeFab(); }, 300));
+  $('#zreset').addEventListener('click', () => { resetZoom(); toast('Đã đặt lại 1.0×'); });
+
+  // Both directions of the same transform, so what you see is exactly what gets tapped.
+  // client point -> 0..1 coordinates on the Android screen
+  function normXY(cx, cy, clamp) {
+    if (!dispW) return null;
+    const B = vbox.getBoundingClientRect();
+    let dx = (cx - (B.left + B.width / 2 + panX)) / zoom;
+    let dy = (cy - (B.top + B.height / 2 + panY)) / zoom;
+    if (rot === 90) { const t = dx; dx = dy; dy = -t; }
+    let x = dx / dispW + 0.5, y = dy / dispH + 0.5;
+    if (clamp) { x = Math.min(1, Math.max(0, x)); y = Math.min(1, Math.max(0, y)); }
+    else if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+    return { x, y };
+  }
+  const norm = (ev) => normXY(ev.clientX, ev.clientY);
+  // 0..1 Android coordinates -> point inside #vbox (CSS px)
+  function toLocal(p) {
+    const B = vbox.getBoundingClientRect();
+    let dx = (p.x - 0.5) * dispW, dy = (p.y - 0.5) * dispH;
+    if (rot === 90) { const t = dx; dx = -dy; dy = t; }
+    return { x: B.width / 2 + panX + dx * zoom, y: B.height / 2 + panY + dy * zoom };
+  }
+  // screen-pixel movement -> Android-normalized movement (for the trackpad)
+  function normDelta(dx, dy) {
+    dx /= zoom; dy /= zoom;
+    if (rot === 90) { const t = dx; dx = dy; dy = -t; }
+    return { x: dx / dispW, y: dy / dispH };
+  }
+
+  // ---------- control ----------
+  // Kênh điều khiển TIN CẬY: mỗi lệnh có số thứ tự (seq), điện thoại ACK lại.
+  // Lệnh không được ACK trong 400ms sẽ gửi lại (tối đa 3 lần) — relay TURN hay rơi gói.
+  // Android dedupe theo seq nên gửi lại không bao giờ bị nhân đôi (kể cả 'text' nối chữ).
+  const RESEND_MS = 400, MAX_TRIES = 3;
+  // Random start: the phone remembers the last 256 seq it saw, and a page reload used to restart at 1,
+  // so the phone ignored the first 256 commands of the new session ("connected but taps do nothing").
+  let ctlSeq = Math.floor(Math.random() * 1e9);
+  let ackSeen = false;            // resend only once the phone has shown it answers ACKs (old app: no resend)
+  const ctlPending = new Map();   // seq -> { msg, tries, timer }
+  function sendCtlRaw(o) {
+    if (!dc || dc.readyState !== 'open') return false;
+    dc.send(JSON.stringify(o));
+    return true;
+  }
+  function sendCtl(o) {
+    if (!dc || dc.readyState !== 'open') return;   // không giữ lệnh cũ khi mất kết nối
+    const msg = { ...o, seq: ++ctlSeq };
+    ctlPending.set(msg.seq, { msg, tries: 1, timer: 0 });
+    sendCtlRaw(msg);
+    if (ackSeen) scheduleResend(msg.seq);
+    else setTimeout(() => ctlPending.delete(msg.seq), 3000);
+  }
+  function scheduleResend(seq) {
+    const st = ctlPending.get(seq);
+    if (!st) return;
+    clearTimeout(st.timer);
+    st.timer = setTimeout(() => {
+      const cur = ctlPending.get(seq);
+      if (!cur) return;
+      if (cur.tries >= MAX_TRIES) { ctlPending.delete(seq); return; }
+      cur.tries++;
+      sendCtlRaw(cur.msg);
+      scheduleResend(seq);
+    }, RESEND_MS);
+  }
+  function ackCtl(seq) {
+    ackSeen = true;
+    const st = ctlPending.get(seq);
+    if (!st) return;
+    clearTimeout(st.timer);
+    ctlPending.delete(seq);
+  }
+  function haptic(ms) { try { navigator.vibrate && navigator.vibrate(ms || 8); } catch {} }
+  const padMode = () => !gameOn() && pref.get('touch', 'direct') === 'pad';
+  const loupeOn = () => pref.get('loupe', '1') === '1';
+  const rippleOn = () => pref.get('ripple', '1') === '1';
+
+  function ripple(p, kind) {
+    if (!rippleOn() || !p) return;
+    const l = toLocal(p);
+    const r = document.createElement('div');
+    r.className = 'ripple' + (kind ? ' ' + kind : '');
+    r.style.left = l.x + 'px'; r.style.top = l.y + 'px';
+    vbox.appendChild(r);
+    setTimeout(() => r.remove(), 700);
+  }
+  function tapAt(p, d, kind) {
+    if (!p) return;
+    sendCtl({ t: 'tap', x: p.x, y: p.y, d: Math.max(40, Math.min(d || 60, 1500)) });
+    recordStep({ t: 'tap', x: p.x, y: p.y, d: Math.max(40, Math.min(d || 60, 1500)) }, performance.now() - (d || 60));
+    ripple(p, kind || (d >= 450 ? 'long' : ''));
+  }
+  function swipe(a, b, d) {
+    if (!a || !b) return;
+    sendCtl({ t: 'swipe', x1: a.x, y1: a.y, x2: b.x, y2: b.y, d: Math.min(Math.max(d, 60), 1500) });
+    recordStep({ t: 'swipe', x: a.x, y: a.y, x2: b.x, y2: b.y, d: Math.min(Math.max(d, 60), 1500) }, performance.now() - d);
+    ripple(b, 'dot');
+  }
+
+  // --- magnifier ---
+  const loupe = $('#loupe'), lctx = loupe.getContext('2d');
+  let loupeAt = null, loupeRaf = 0;
+  (function sizeLoupe() { const r = Math.min(3, window.devicePixelRatio || 1); loupe.width = loupe.height = 120 * r; lctx.setTransform(r, 0, 0, r, 0, 0); })();
+  function showLoupe(clientX, clientY) {
+    const p = normXY(clientX, clientY, true);
+    if (!p) return;
+    loupeAt = { p, cx: clientX, cy: clientY };
+    const B = vbox.getBoundingClientRect();
+    let lx = clientX - B.left - 60, ly = clientY - B.top - 60 - 95;           // float above the finger
+    if (ly < 4) ly = clientY - B.top - 60 + 95;                              // no room: go below
+    lx = Math.min(B.width - 124, Math.max(4, lx));
+    loupe.style.left = lx + 'px'; loupe.style.top = ly + 'px';
+    loupe.classList.remove('hidden');
+    if (!loupeRaf) loupeRaf = requestAnimationFrame(drawLoupe);
+  }
+  function drawLoupe() {
+    loupeRaf = 0;
+    if (!loupeAt) return;
+    const vw = video.videoWidth, vh = video.videoHeight;
+    lctx.fillStyle = '#000'; lctx.fillRect(0, 0, 120, 120);
+    if (vw) {
+      const s = 2.5 * (dispW * zoom) / vw;                                  // 2.5x what is on screen
+      lctx.save();
+      lctx.translate(60, 60); lctx.rotate(rot * Math.PI / 180); lctx.scale(s, s);
+      try { lctx.drawImage(video, -loupeAt.p.x * vw, -loupeAt.p.y * vh, vw, vh); } catch {}
+      lctx.restore();
+    }
+    lctx.strokeStyle = 'rgba(0,0,0,.6)'; lctx.lineWidth = 3;
+    lctx.beginPath(); lctx.moveTo(60, 48); lctx.lineTo(60, 72); lctx.moveTo(48, 60); lctx.lineTo(72, 60); lctx.stroke();
+    lctx.strokeStyle = '#ff5d6c'; lctx.lineWidth = 1.5;
+    lctx.beginPath(); lctx.moveTo(60, 48); lctx.lineTo(60, 72); lctx.moveTo(48, 60); lctx.lineTo(72, 60); lctx.stroke();
+    loupeRaf = requestAnimationFrame(drawLoupe);
+  }
+  function hideLoupe() { loupeAt = null; loupe.classList.add('hidden'); cancelAnimationFrame(loupeRaf); loupeRaf = 0; }
+
+  // --- trackpad cursor ---
+  const cursorEl = $('#cursor');
+  let cur = { x: 0.5, y: 0.5 };
+  function placeCursor() {
+    const show = padMode() && inSession && !!dispW;
+    cursorEl.classList.toggle('hidden', !show);
+    if (!show) return;
+    const l = toLocal(cur);
+    cursorEl.style.left = l.x + 'px'; cursorEl.style.top = l.y + 'px';
+  }
+
+  const TAP_PX = 10;              // finger wobble allowed for a tap (screen px, independent of zoom)
+  const HOLD_LOUPE_MS = 300, LOUPE_LONG_MS = 1200, PAD_LONG_MS = 600, DBL_MS = 260;
+  const pts = new Map();
+  let g = null, pinch = null, pinchUsed = false;   // g = the current one-finger gesture
+  let padClickT = null, padLastUp = 0;
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+  function cancelGesture() {
+    if (!g) return;
+    clearTimeout(g.holdT); clearTimeout(g.longT);
+    g = null; hideLoupe(); cursorEl.classList.remove('drag');
+  }
+
+  vbox.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    try { vbox.setPointerCapture(e.pointerId); } catch {}
+    if (picking) return finishPick(e);
+    if (gameOn()) return gDown(e);
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 1 && !pinchUsed) {
+      const now = performance.now();
+      g = { id: e.pointerId, type: e.pointerType, sx: e.clientX, sy: e.clientY, lx: e.clientX, ly: e.clientY, t: now, moved: false, loupe: false, done: false };
+      if (e.pointerType === 'mouse') { video.focus(); g.p0 = norm(e); return; }
+      if (padMode()) {
+        g.pad = true;
+        // double-tap then drag = press-and-drag (swipe) at the cursor
+        if (now - padLastUp < DBL_MS && padClickT) { clearTimeout(padClickT); padClickT = null; g.drag = true; g.p0 = { ...cur }; cursorEl.classList.add('drag'); haptic(); }
+        else g.longT = setTimeout(() => { if (g && !g.moved && !g.drag) { g.done = true; tapAt({ ...cur }, 700, 'long'); haptic(20); } }, PAD_LONG_MS);
+        return;
+      }
+      g.p0 = norm(e);
+      if (g.p0 && loupeOn()) g.holdT = setTimeout(() => { if (g && !g.moved) { g.loupe = true; haptic(); showLoupe(g.lx, g.ly); armLoupeLong(); } }, HOLD_LOUPE_MS);
+    } else if (pts.size === 2) {
+      cancelGesture(); pinchUsed = true;
+      const [a, b] = [...pts.values()];
+      const B = vbox.getBoundingClientRect();
+      pinch = { d0: dist(a, b) || 1, z0: zoom, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, px: panX, py: panY, cx: B.left + B.width / 2, cy: B.top + B.height / 2 };
+    }
+  });
+  function armLoupeLong() {
+    clearTimeout(g.longT);
+    const me = g;
+    g.longT = setTimeout(() => { if (g === me && g.loupe && !g.done) { g.done = true; tapAt(loupeAt && loupeAt.p, 700, 'long'); haptic(20); hideLoupe(); } }, LOUPE_LONG_MS);
+  }
+
+  vbox.addEventListener('pointermove', (e) => {
+    if (slots.has(e.pointerId)) return gMove(e);
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pts.size >= 2) {
+      const [a, b] = [...pts.values()];
+      const z = Math.min(5, Math.max(1, pinch.z0 * dist(a, b) / pinch.d0));
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const lx = (pinch.mx - pinch.cx - pinch.px) / pinch.z0, ly = (pinch.my - pinch.cy - pinch.py) / pinch.z0;
+      zoom = z; panX = mx - pinch.cx - z * lx; panY = my - pinch.cy - z * ly;
+      if (zoom <= 1.01) { zoom = 1; panX = panY = 0; }
+      layout();
+      return;
+    }
+    if (!g || e.pointerId !== g.id) return;
+    const ddx = e.clientX - g.lx, ddy = e.clientY - g.ly;
+    g.lx = e.clientX; g.ly = e.clientY;
+    if (!g.moved && Math.hypot(e.clientX - g.sx, e.clientY - g.sy) > TAP_PX) {
+      g.moved = true; clearTimeout(g.holdT);
+      if (!g.loupe) clearTimeout(g.longT);
+    }
+    if (g.pad) {
+      // trackpad: move the cursor (slightly accelerated for long moves)
+      const sp = Math.hypot(ddx, ddy);
+      const k = sp > 18 ? 1.8 : sp > 8 ? 1.3 : 1;
+      const d = normDelta(ddx * k, ddy * k);
+      cur = { x: Math.min(1, Math.max(0, cur.x + d.x)), y: Math.min(1, Math.max(0, cur.y + d.y)) };
+      placeCursor();
+    } else if (g.loupe) {
+      showLoupe(e.clientX, e.clientY);
+      if (Math.hypot(ddx, ddy) > 1.5) armLoupeLong();     // only a still finger triggers the long press
+    }
+  });
+
+  function pointerEnd(e) {
+    if (slots.has(e.pointerId)) return gUp(e);
+    pts.delete(e.pointerId);
+    if (g && e.pointerId === g.id) {
+      const now = performance.now(), dt = Math.round(now - g.t);
+      const ok = e.type === 'pointerup' && !g.done;
+      if (ok && g.pad) {
+        if (g.drag) { if (g.moved) swipe(g.p0, { ...cur }, dt); else { tapAt({ ...cur }); setTimeout(() => tapAt({ ...cur }), 90); } }
+        else if (!g.moved && dt < PAD_LONG_MS) {
+          // wait a moment: a second tap turns this into a drag
+          const at = { ...cur }; padLastUp = now;
+          padClickT = setTimeout(() => { padClickT = null; tapAt(at); }, DBL_MS);
+        }
+      } else if (ok && g.loupe) {
+        tapAt(loupeAt ? loupeAt.p : g.p0, 60);
+      } else if (ok && g.p0) {
+        const p1 = normXY(e.clientX, e.clientY, true);
+        if (!g.moved) tapAt(g.p0, g.type === 'mouse' || !loupeOn() ? dt : 60);
+        else swipe(g.p0, p1, dt);
+      }
+      cancelGesture();
+    }
+    if (pts.size < 2) pinch = null;
+    if (pts.size === 0) pinchUsed = false;
+  }
+  vbox.addEventListener('pointerup', pointerEnd);
+  vbox.addEventListener('pointercancel', pointerEnd);
+  vbox.addEventListener('contextmenu', (e) => { e.preventDefault(); if (!('ontouchstart' in window) || e.pointerType === 'mouse') { haptic(); sendCtl({ t: 'key', k: 'back' }); } });
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('touchmove', (e) => {
+    if (inSession && !e.target.closest('.sheet, .menu')) e.preventDefault();
+  }, { passive: false });
+
+  let wheelAt = 0;
+  vbox.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if (e.ctrlKey) { // trackpad pinch / ctrl+wheel = zoom
+      zoom = Math.min(5, Math.max(1, zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
+      if (zoom <= 1.01) { zoom = 1; panX = panY = 0; }
+      return layout();
+    }
+    const now = performance.now();
+    if (now - wheelAt < 250) return;
+    wheelAt = now;
+    const p = norm(e); if (!p) return;
+    const dy = Math.sign(e.deltaY) * 0.25;
+    const c = (v) => Math.min(0.95, Math.max(0.05, v));
+    sendCtl({ t: 'swipe', x1: p.x, y1: c(p.y + dy / 2), x2: p.x, y2: c(p.y - dy / 2), d: 200 });
+  }, { passive: false });
+
+  // PC/laptop: type straight into the phone without opening the keyboard sheet
+  document.addEventListener('keydown', (e) => {
+    if (!inSession || e.target.closest('input, textarea')) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === 'Backspace') sendCtl({ t: 'key', k: 'backspace' });
+    else if (e.key === 'Enter') sendCtl({ t: 'key', k: 'enter' });
+    else if (e.key === 'Escape') { if (!$('#menu').classList.contains('hidden')) return closeMenu(); sendCtl({ t: 'key', k: 'back' }); }
+    else if (e.key === 'Home') sendCtl({ t: 'key', k: 'home' });
+    else if (e.key.length === 1) sendCtl({ t: 'text', s: e.key });
+    else return;
+    e.preventDefault();
+  });
+  document.addEventListener('paste', (e) => {
+    if (!inSession || e.target.closest('input, textarea')) return;
+    const s = e.clipboardData && e.clipboardData.getData('text');
+    if (s) { sendCtl({ t: 'text', s }); toast('Đã dán ' + s.length + ' ký tự'); }
+  });
+
+  document.querySelectorAll('[data-key]').forEach((b) => b.addEventListener('click', () => { haptic(); sendCtl({ t: 'key', k: b.dataset.key }); }));
+
+  // ---------- floating handle: drag anywhere, snaps to the nearest side, tap = panel ----------
+  const fab = $('#fab');
+  let fabPos = (() => { try { return JSON.parse(pref.get('fab', '')) || null; } catch { return null; } })() || { side: 'r', y: 0.4 };
+  function placeFab(x, y) {
+    const W = window.innerWidth, H = window.innerHeight, S = 46, m = 6;
+    if (x == null) { x = fabPos.side === 'l' ? m : W - S - m; y = fabPos.y * H; }
+    y = Math.min(H - S - m, Math.max(m, y));
+    fab.style.left = x + 'px'; fab.style.top = y + 'px';
+  }
+  let fd = null;
+  fab.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    try { fab.setPointerCapture(e.pointerId); } catch {}
+    const r = fab.getBoundingClientRect();
+    fd = { id: e.pointerId, sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, moved: false };
+  });
+  fab.addEventListener('pointermove', (e) => {
+    if (!fd || e.pointerId !== fd.id) return;
+    if (!fd.moved && Math.hypot(e.clientX - fd.sx, e.clientY - fd.sy) < 8) return;
+    fd.moved = true; fab.classList.add('drag');
+    placeFab(e.clientX - fd.ox, e.clientY - fd.oy);
+  });
+  const fabUp = (e) => {
+    if (!fd || e.pointerId !== fd.id) return;
+    const moved = fd.moved; fd = null; fab.classList.remove('drag');
+    if (moved) {
+      const r = fab.getBoundingClientRect();
+      fabPos = { side: r.left + r.width / 2 < window.innerWidth / 2 ? 'l' : 'r', y: r.top / window.innerHeight };
+      pref.set('fab', JSON.stringify(fabPos));
+      placeFab();
+    } else if (e.type === 'pointerup') { haptic(); toggleMenu(); }
+  };
+  fab.addEventListener('pointerup', fabUp);
+  fab.addEventListener('pointercancel', fabUp);
+
+  // ---------- keyboard: manual send, or live mirror of the focused Android text field ----------
+  const textin = $('#textin'), sheet = $('#sheet');
+  const finePointer = window.matchMedia('(pointer: fine)').matches;
+  function openSheet(live) {
+    closeMenu();
+    sheet.classList.add('open');
+    sheet.classList.toggle('live', !!live);
+    textin.placeholder = live ? 'Gõ vào ô đang chọn trên máy Android…' : 'Gõ chữ gửi vào ô đang chọn…';
+  }
+  function closeSheet() { sheet.classList.remove('open', 'live'); sheetByIme = false; textin.blur(); textin.type = 'text'; setTimeout(unscroll, 350); }
+  function onIme(m) {
+    imeActive = !!m.on;
+    if (imeActive) {
+      if (!sheet.classList.contains('open')) sheetByIme = true;
+      openSheet(true);
+      textin.type = m.pw ? 'password' : 'text';
+      if (document.activeElement !== textin) textin.value = m.text || '';
+      if (finePointer) textin.focus();
+    } else if (sheet.classList.contains('live')) {
+      if (sheetByIme) closeSheet(); else openSheet(false);
+    }
+  }
+  const sendText = () => { const v = textin.value; if (v) { sendCtl({ t: 'text', s: v }); textin.value = ''; toast('Đã gửi'); } };
+  $('#sendtext').addEventListener('click', sendText);
+  textin.addEventListener('input', () => {
+    if (!sheet.classList.contains('live')) return;
+    clearTimeout(liveTimer);
+    liveTimer = setTimeout(() => sendCtl({ t: 'settext', s: textin.value }), 90);
+  });
+  textin.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (sheet.classList.contains('live')) { clearTimeout(liveTimer); sendCtl({ t: 'settext', s: textin.value }); setTimeout(() => sendCtl({ t: 'key', k: 'enter' }), 60); }
+    else sendText();
+  });
+  $('#kb').addEventListener('click', () => { if (sheet.classList.contains('open')) closeSheet(); else { openSheet(imeActive); textin.focus(); } });
+  $('#sheetClose').addEventListener('click', closeSheet);
+  // keep the input bar above the iPhone keyboard
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const fit = () => { sheet.style.bottom = Math.max(0, window.innerHeight - vv.height - vv.offsetTop) + 'px'; };
+    vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
+    vv.addEventListener('resize', () => setTimeout(unscroll, 300));
+    textin.addEventListener('blur', () => setTimeout(unscroll, 300));
+  }
+
+  // ---------- game mode: realtime multi-touch, macros, game watch, device stats ----------
+  let caps = [], gstate = null, devStat = null, recording = null, picking = false, pendingSave = null, audioCtx = null;
+  // Off by default: continued multi-finger gestures are unreliable on Android 9 (LDPlayer 9).
+  const gameOn = () => caps.includes('mt') && pref.get('game2', '0') === '1';
+
+  // ---------- chuột ảo cho máy tính (pad mode + nút đúp/phải/cuộn) ----------
+  function updateMousebar() {
+    try { $('#mousebar').classList.toggle('hidden', !(inSession && padMode() && caps.includes('mouse'))); } catch (_) {}
+  }
+  $('#mdbl').addEventListener('click', () => { haptic(); sendCtl({ t: 'mdbl', x: cur.x, y: cur.y }); });
+  $('#mrc').addEventListener('click', () => { haptic(); sendCtl({ t: 'mrc', x: cur.x, y: cur.y }); });
+  $('#mscrollup').addEventListener('click', () => { haptic(); sendCtl({ t: 'mscroll', dy: -3 }); });
+  $('#mscrolldown').addEventListener('click', () => { haptic(); sendCtl({ t: 'mscroll', dy: 3 }); });
+  const slots = new Map();               // pointerId -> finger slot on the Android side
+  const pendMove = new Map(); let moveRaf = 0;
+  const r4 = (v) => Math.round(v * 10000) / 10000;
+  function freeSlot() { const used = new Set([...slots.values()].map((s) => s.i)); for (let i = 0; i < 10; i++) if (!used.has(i)) return i; return -1; }
+  function flushMoves() {
+    moveRaf = 0;
+    if (!pendMove.size) return;
+    sendCtlRaw({ t: 'tm', p: [...pendMove.entries()].map(([i, p]) => [i, r4(p.x), r4(p.y)]) });   // di chuyển: không chờ ACK
+    pendMove.clear();
+  }
+  // A finger only becomes a live (streamed) touch once it moves, is held, or another finger joins.
+  // Quick taps are sent as one reliable tap — never as a stream.
+  function startSlot(s) {
+    if (s.started) return;
+    s.started = true; clearTimeout(s.timer);
+    sendCtl({ t: 'td', i: s.i, x: r4(s.p0.x), y: r4(s.p0.y) });
+    if (s.last !== s.p0) { pendMove.set(s.i, s.last); if (!moveRaf) moveRaf = requestAnimationFrame(flushMoves); }
+  }
+  function gDown(e) {
+    const p = normXY(e.clientX, e.clientY, false); if (!p) return;      // ignore touches on the black bars
+    const i = freeSlot(); if (i < 0) return;
+    const s = { i, sx: e.clientX, sy: e.clientY, t: performance.now(), p0: p, last: p, started: false };
+    slots.set(e.pointerId, s);
+    if (slots.size > 1) slots.forEach(startSlot);                            // multi-touch: everyone live
+    else s.timer = setTimeout(() => startSlot(s), 180);                     // held finger: go live
+    ripple(p, 'dot');
+  }
+  function gMove(e) {
+    const s = slots.get(e.pointerId); if (!s) return;
+    const p = normXY(e.clientX, e.clientY, true); if (!p) return;
+    s.last = p;
+    if (!s.started) { if (Math.hypot(e.clientX - s.sx, e.clientY - s.sy) > TAP_PX) startSlot(s); return; }
+    pendMove.set(s.i, p);
+    if (!moveRaf) moveRaf = requestAnimationFrame(flushMoves);
+  }
+  function gUp(e) {
+    const s = slots.get(e.pointerId); if (!s) return;
+    slots.delete(e.pointerId);
+    if (!s.started) {
+      clearTimeout(s.timer);
+      if (e.type === 'pointerup') tapAt(s.p0, Math.round(performance.now() - s.t));
+      return;
+    }
+    const p = (e.type === 'pointerup' && normXY(e.clientX, e.clientY, true)) || s.last;
+    if (p.x !== s.last.x || p.y !== s.last.y) pendMove.set(s.i, p);
+    cancelAnimationFrame(moveRaf); flushMoves();
+    sendCtl({ t: 'tu', i: s.i });
+    const dt = Math.round(performance.now() - s.t);
+    if (e.type !== 'pointerup') return;
+    if (Math.hypot(e.clientX - s.sx, e.clientY - s.sy) <= TAP_PX) recordStep({ t: 'tap', x: s.p0.x, y: s.p0.y, d: Math.max(40, Math.min(dt, 1500)) }, s.t);
+    else recordStep({ t: 'swipe', x: s.p0.x, y: s.p0.y, x2: p.x, y2: p.y, d: Math.max(60, Math.min(dt, 1500)) }, s.t);
+  }
+
+  // --- macro recording ---
+  function recordStep(step, t0) {
+    if (!recording) return;
+    const t = t0 || performance.now();
+    for (const k of ['x', 'y', 'x2', 'y2']) if (k in step) step[k] = r4(step[k]);
+    step.w = recording.steps.length ? Math.round(t - recording.last) : 0;
+    recording.last = t;
+    recording.steps.push(step);
+  }
+  function stopTools() { recording = null; picking = false; fab.classList.remove('rec', 'pick'); $('#recBtn').textContent = '● Ghi thao tác'; $('#recBtn').classList.remove('rec'); }
+  $('#recBtn').addEventListener('click', () => {
+    if (recording) {
+      const steps = recording.steps; stopTools();
+      if (!steps.length) return toast('Chưa ghi được thao tác nào');
+      pendingSave = { steps, name: 'Macro ' + (((gstate && gstate.macros.length) || 0) + 1) };
+      return openSaveBox(`${steps.length} thao tác đã ghi`);
+    }
+    recording = { steps: [], last: 0 };
+    fab.classList.add('rec'); $('#recBtn').textContent = '■ Dừng ghi'; $('#recBtn').classList.add('rec');
+    closeMenu(); toast('Đang ghi: thao tác như bình thường, xong bấm nút tròn → Dừng ghi');
+  });
+  $('#autoBtn').addEventListener('click', () => {
+    stopTools(); picking = true; fab.classList.add('pick');
+    closeMenu(); toast('Chạm vào điểm cần auto chạm');
+  });
+  function finishPick(e) {
+    const p = normXY(e.clientX, e.clientY, true);
+    stopTools(); if (!p) return;
+    ripple(p, 'long');
+    pendingSave = { steps: [{ t: 'tap', x: r4(p.x), y: r4(p.y), d: 50, w: 0 }], name: 'Auto chạm' };
+    // open the panel only after this touch has ended, so its click can't land on a panel control
+    setTimeout(() => openSaveBox('Chạm 1 điểm, lặp lại sau mỗi khoảng nghỉ', true), 400);
+  }
+  function openSaveBox(info, auto) {
+    $('#mname').value = pendingSave.name;
+    $('#mloops').value = '0';
+    $('#mgap').value = '1000';
+    $('#minfo').textContent = info;
+    $('#saveBox').classList.remove('hidden');
+    openMenu();
+    setTimeout(() => $('#saveBox').scrollIntoView({ block: 'nearest' }), 50);
+  }
+  $('#mcancel').addEventListener('click', () => { pendingSave = null; $('#saveBox').classList.add('hidden'); });
+  $('#msave').addEventListener('click', () => {
+    const name = $('#mname').value.trim();
+    if (!name) return $('#mname').focus();
+    if (!pendingSave) return;
+    sendCtl({ t: 'macro_save', m: { name, steps: pendingSave.steps, loops: Number($('#mloops').value), gap: Number($('#mgap').value) } });
+    pendingSave = null; $('#saveBox').classList.add('hidden');
+    toast('Đã lưu "' + name + '" vào máy Android');
+  });
+  $('#mlist').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const name = b.closest('.mrow').dataset.name;
+    if (b.dataset.act === 'run') { sendCtl({ t: 'macro_run', name }); toast('Bắt đầu chạy "' + name + '"'); }
+    if (b.dataset.act === 'stop') sendCtl({ t: 'macro_stop' });
+    if (b.dataset.act === 'del') {
+      if (b.dataset.sure) sendCtl({ t: 'macro_del', name });
+      else { b.dataset.sure = '1'; b.textContent = 'Xoá?'; setTimeout(() => { if (b.isConnected) { delete b.dataset.sure; b.textContent = '✕'; } }, 2500); }
+    }
+  });
+  function renderGame() {
+    const g = gstate;
+    const list = (g && g.macros) || [];
+    $('#mlist').innerHTML = list.map((m) => {
+      const on = g.running === m.name;
+      return `<div class="mrow" data-name="${esc(m.name)}"><div class="mn"><b>${esc(m.name)}</b><small>${m.n} thao tác · ${m.loops ? 'lặp ' + m.loops + ' lần' : 'lặp mãi'}${on ? ' · <span style="color:var(--ok)">đang chạy</span>' : ''}</small></div>
+        <button class="kbtn ${on ? 'on' : 'primary'}" data-act="${on ? 'stop' : 'run'}">${on ? 'Dừng' : 'Chạy'}</button><button class="kbtn" data-act="del">✕</button></div>`;
+    }).join('') || '<div class="mnote" style="margin:0">Chưa có macro nào.</div>';
+    $('#optWatch').checked = !!(g && g.watch);
+    $('#optRelaunch').checked = !!(g && g.relaunch);
+    $('#watchInfo').textContent = g && g.watch ? 'Đang theo dõi: ' + g.watch : 'Ghim app đang mở trên máy Android' + (g && g.current ? ': ' + g.current : '');
+  }
+  $('#optGame').addEventListener('change', (e) => { pref.set('game2', e.target.checked ? '1' : '0'); sendCtl({ t: 'tc' }); syncMenu(); placeCursor(); });
+  $('#optWatch').addEventListener('change', (e) => sendCtl({ t: 'watch', on: e.target.checked, relaunch: $('#optRelaunch').checked }));
+  $('#optRelaunch').addEventListener('change', (e) => sendCtl({ t: 'watch', on: !!(gstate && gstate.watch) || $('#optWatch').checked, relaunch: e.target.checked }));
+  $('#optKeep').addEventListener('change', (e) => { pref.set('keep', e.target.checked ? '1' : '0'); sendCtl({ t: 'keep_screen', on: e.target.checked }); });
+
+  // --- messages from the Android app ---
+  let warned = {};
+  function beep() {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.frequency.value = 880; g.gain.value = 0.15; o.connect(g); g.connect(audioCtx.destination);
+      o.start(); o.stop(audioCtx.currentTime + 0.25);
+    } catch {}
+  }
+  document.addEventListener('pointerdown', () => { try { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); else if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch {} }, { once: false, passive: true });
+  function showAlert(msg, canOpen) {
+    $('#alerttxt').textContent = msg;
+    $('#alertOpen').classList.toggle('hidden', !canOpen);
+    $('#alertbar').classList.remove('hidden');
+    haptic(200); beep();
+  }
+  $('#alertClose').addEventListener('click', () => $('#alertbar').classList.add('hidden'));
+  $('#alertOpen').addEventListener('click', () => { sendCtl({ t: 'open_game' }); $('#alertbar').classList.add('hidden'); });
+  function onDeviceMsg(m) {
+    if (m.t === 'update') return onUpdateMsg(String(m.st || ''));
+    if (m.t === 'hello') { caps = m.caps || []; if (caps.includes('mouse') && pref.get('touchAuto', '0') !== '1') { pref.set('touchAuto', '1'); if (pref.get('touch', 'direct') === 'direct') { pref.set('touch', 'pad'); toast('Máy tính: đã bật chuột ảo — kéo để di chuột, chạm để bấm'); } } devVer = m.ver ? { ver: m.ver, vname: m.vname, sdk: m.sdk } : null; showUpdates(); if (!m.a11y) toast('Máy Android chưa bật quyền điều khiển'); sendCtl({ t: 'keep_screen', on: pref.get('keep', '1') === '1' }); syncMenu(); placeCursor(); }
+    else if (m.t === 'game') { gstate = m; renderGame(); }
+    else if (m.t === 'stat') {
+      devStat = m;
+      const hot = m.temp >= 45, low = m.batt >= 0 && m.batt <= 15 && !m.chg;
+      $('#dot').classList.toggle('hot', hot || low);
+      if (hot && !warned.hot) { warned.hot = 1; showAlert(`Máy Android đang nóng ${m.temp.toFixed(0)}°C`); }
+      if (low && !warned.low) { warned.low = 1; showAlert(`Pin máy Android còn ${m.batt}%, nên cắm sạc`); }
+      if (!hot) warned.hot = 0; if (!low) warned.low = 0;
+      $('#gstat').textContent = `Máy Android: pin ${m.batt}%${m.chg ? ' (đang sạc)' : ''} · ${m.temp.toFixed(0)}°C`;
+      renderFpsInfo();
+    }
+    else if (m.t === 'alert') {
+      if (m.k === 'game_back') { $('#alertbar').classList.add('hidden'); toast(m.msg); }
+      else showAlert(m.msg, m.k === 'game_exit');
+    }
+  }
+  // ---------- versions: web page + Android app, one-tap update ----------
+  let verLoaded = null, verNow = null, devVer = null, updating = false;
+  async function fetchVersion() {
+    try { verNow = await (await fetch('version?t=' + Date.now(), { cache: 'no-store' })).json(); } catch { return null; }
+    if (!verLoaded) verLoaded = verNow;
+    showUpdates();
+    return verNow;
+  }
+  const apkLatest = () => (verNow && verNow.apk && verNow.apk.versionCode) || 0;
+  function showUpdates() {
+    const webNew = verNow && verLoaded && verNow.web !== verLoaded.web;
+    const appNew = devVer && apkLatest() > devVer.ver;
+    $('#updbar').classList.add('hidden');           // replaced by the banner shown on every screen
+    const key = (webNew ? 'w' + verNow.web : '') + (appNew ? 'a' + apkLatest() : '');
+    const show = !!key && pref.get('ubHide', '') !== key;
+    $('#updbanner').classList.toggle('hidden', !show);
+    $('#updbanner').dataset.key = key;
+    $('#updbanner').dataset.kind = webNew ? 'web' : 'app';
+    $('#ubTxt').textContent = webNew && appNew ? 'Có bản mới cho web và app Android'
+      : webNew ? 'Có bản web mới' : 'App Android có bản mới ' + verNow.apk.versionName;
+    $('#syncBtn').classList.toggle('has', !!(webNew || appNew));
+    $('#syncLbl').textContent = webNew || appNew ? 'Có bản mới' : 'Đồng bộ';
+    $('#updtxt').textContent = 'Có bản web mới: bấm để cập nhật';
+    const parts = [];
+    parts.push('Web: ' + (verLoaded ? verLoaded.web : '?') + (webNew ? ' → ' + verNow.web + ' (có bản mới)' : ''));
+    if (devVer) parts.push('App Android: ' + (devVer.vname || devVer.ver) + (appNew ? ' → ' + verNow.apk.versionName + ' (có bản mới)' : ' (mới nhất)'));
+    else if (inSession) parts.push('App Android: bản cũ, chưa hỗ trợ cập nhật từ xa');
+    if ($('#verInfo')) $('#verInfo').textContent = parts.join(' · ');
+    $('#updApp').disabled = !caps.includes('update');
+    $('#updApp').textContent = appNew ? 'Cập nhật app Android' : 'Cài lại app Android';
+    $('#updApp').classList.toggle('primary', !!appNew);
+    $('#updWeb').classList.toggle('primary', !!webNew);
+    if (inSession && webNew && !showUpdates.told) { showUpdates.told = 1; toast('Có bản web mới: mở bảng điều khiển → Tải lại trang'); }
+  }
+  function reloadWeb() {
+    const u = new URL(location.href);
+    u.searchParams.set('v', Date.now());
+    if (inSession && current) u.searchParams.set('id', current.id); else u.searchParams.delete('id');
+    location.replace(u.toString());
+  }
+  $('#updgo').addEventListener('click', reloadWeb);
+  $('#ubX').addEventListener('click', () => { pref.set('ubHide', $('#updbanner').dataset.key || ''); $('#updbanner').classList.add('hidden'); });
+  $('#ubGo').addEventListener('click', () => {
+    if ($('#updbanner').dataset.kind === 'web') return reloadWeb();
+    $('#updbanner').classList.add('hidden'); $('#updApp').click();
+  });
+  $('#updWeb').addEventListener('click', reloadWeb);
+  $('#syncBtn').addEventListener('click', async () => {
+    const b = $('#syncBtn'); b.disabled = true;
+    const v = await fetchVersion();
+    if (v && verLoaded && v.web !== verLoaded.web) return reloadWeb();
+    b.disabled = false;
+    toast(v ? 'Đã là bản mới nhất' + (v.apk && v.apk.versionName ? ' · app Android mới nhất: ' + v.apk.versionName : '') : 'Không kiểm tra được, thử lại');
+  });
+  $('#updApp').addEventListener('click', () => {
+    if (!caps.includes('update')) return toast('App Android này quá cũ: cài bản mới bằng tay một lần');
+    const force = !(devVer && apkLatest() > devVer.ver);
+    sendCtl({ t: 'update_app', force }); toast('Đang gửi lệnh cập nhật tới máy Android…'); closeMenu();
+  });
+  function onUpdateMsg(st) {
+    const map = { checking: 'Máy Android đang kiểm tra bản mới…', latest: 'App Android đã là bản mới nhất', busy: 'Đang cập nhật rồi',
+      downloading: 'Máy Android đang tải bản mới…',
+      need_permission: 'Cần cho phép cài app: trên màn hình máy Android hãy bật "Cho phép từ nguồn này", rồi bấm Cập nhật lại',
+      installing: 'Đang cài bản mới: app sẽ tự mở lại và chia sẻ tiếp (khoảng 1 phút)…' };
+    const msg = map[st] || (st.startsWith('error:') ? 'Cập nhật lỗi: ' + st.slice(6) : st);
+    if (st === 'installing') { updating = true; reconnectLimit = 5 * 60e3; showOverlay(msg, true); }
+    else toast(msg);
+    if (st === 'need_permission') showAlert(msg, false);
+  }
+  setInterval(fetchVersion, 5 * 60e3);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') fetchVersion(); });
+  fetchVersion();
+
+  // Where the frame rate is lost: emulator capture → encoder → network → this phone.
+  function fpsDiagnosis() {
+    const m = devStat || {};
+    if (m.capFps == null && m.encFps == null) return null;
+    const cap = Math.round(m.capFps || 0), enc = Math.round(m.encFps || 0), want = QUALITY[qualityKey()].fps;
+    const sw = /openh264|libvpx|software|SW/i.test(m.encoder || '') ? 'phần mềm' : m.encoder ? 'phần cứng' : '';
+    const lim = { cpu: 'CPU máy Android mã hoá không kịp', bandwidth: 'mạng không đủ băng thông', other: 'giới hạn khác' }[m.limit] || '';
+    let tip = '';
+    if (cap && cap < want * 0.6) tip = 'Giả lập chỉ xuất ' + cap + ' fps: mở LDPlayer → Cài đặt → Nâng cao → FPS = 60 (và bật khung hình cao trong game). Màn hình đứng yên thì fps thấp là bình thường.';
+    else if (m.limit === 'cpu') tip = 'CPU không kịp mã hoá: chọn "Siêu mượt (720p)" hoặc tăng nhân CPU cho LDPlayer.';
+    else if (m.limit === 'bandwidth') tip = 'Mạng chậm: chọn "Siêu mượt (720p)" hoặc "Cân bằng".';
+    return { cap, enc, want, sw, lim, tip, size: m.encW ? m.encW + '×' + m.encH : '' };
+  }
+  function renderFpsInfo() {
+    const d = fpsDiagnosis(); if (!d) return;
+    $('#gstat').textContent += ` · chụp ${d.cap} fps → gửi ${d.enc} fps${d.size ? ' (' + d.size + ')' : ''}${d.lim ? ' · ' + d.lim : ''}`;
+  }
+
+  function resetGame() { devVer = null; caps = []; gstate = null; devStat = null; slots.clear(); pendMove.clear(); stopTools(); warned = {}; $('#alertbar').classList.add('hidden'); $('#saveBox').classList.add('hidden'); }
+
+  // ---------- network test ----------
+  function natCheck() {
+    // Ask two different STUN servers for our public address: different ports = symmetric NAT (no direct P2P).
+    return new Promise((res) => {
+      let pc; const seen = [];
+      try { pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }] }); } catch { return res('?'); }
+      pc.createDataChannel('n');
+      const fin = () => { try { pc.close(); } catch {} const byBase = {};
+        seen.forEach((c) => { (byBase[c.base] = byBase[c.base] || new Set()).add(c.port); });
+        const sets = Object.values(byBase); if (!sets.length) return res('blocked');
+        res(sets.some((x) => x.size > 1) ? 'symmetric' : 'cone'); };
+      pc.onicecandidate = (e) => {
+        if (!e.candidate) return fin();
+        const m = / (\d+) typ srflx raddr \S+ rport (\d+)/.exec(e.candidate.candidate);
+        if (m) seen.push({ port: m[1], base: m[2] });
+      };
+      pc.createOffer().then((o) => pc.setLocalDescription(o)).catch(() => res('?'));
+      setTimeout(fin, 4000);
+    });
+  }
+  $('#netTest').addEventListener('click', async () => {
+    const out = $('#netOut'), btn = $('#netTest');
+    btn.disabled = true; out.textContent = 'Đang đo… (khoảng 5–10 giây)';
+    const [nat, list] = await Promise.all([natCheck(), probeCfg ? measureTurns(3000) : Promise.resolve([])]);
+    const lines = [];
+    if (pathInfo) {
+      const p = pathInfo;
+      lines.push(relay ? `Hiện tại: đi vòng qua TURN${p.proto ? ' (' + String(p.proto).toUpperCase() + ')' : ''}, ping ${p.rtt ?? '?'} ms`
+                       : `Hiện tại: kết nối thẳng P2P, ping ${p.rtt ?? '?'} ms. Đây là đường nhanh nhất.`);
+    }
+    lines.push('Mạng của máy này: ' + ({ cone: 'NAT thường, nối thẳng được', symmetric: 'NAT đối xứng (thường là 4G): khó nối thẳng', blocked: 'chặn UDP: phải đi TURN qua TCP, chậm hơn' }[nat] || 'không rõ'));
+    const ok = list.filter((x) => x.ms != null);
+    if (ok.length) {
+      const best = ok[0];
+      turnPick = { url: best.url, ms: best.ms, at: Date.now(), list };
+      pref.set(PICK_KEY, JSON.stringify(turnPick)); applyTurn();
+      lines.push('Máy chủ TURN (ping ước tính):');
+      ok.slice(0, 6).forEach((x, i) => lines.push(`${i ? '   ' : '✓ '}${(relayOf(x.url) || {}).name || ''} ${shortHost(x.url)}: ~${x.ms} ms`));
+      lines.push(`Đã chọn ${shortHost(best.url)}. Áp dụng khi kết nối lại.`);
+    } else if (probeCfg) lines.push('Không đo được máy chủ TURN nào (mạng chặn UDP?).');
+    if (relay || nat !== 'cone') {
+      lines.push('', 'Không nối thẳng được thì app tự đi qua máy trung chuyển nhanh nhất ở trên (Cloudflare/Metered gần Việt Nam).',
+        'Muốn nối thẳng: modem nơi đặt máy Android cần NAT thường (bật UPnP/DMZ), giả lập bật "Cầu nối mạng".');
+    }
+    const fd = fpsDiagnosis();
+    if (fd) lines.push('', `Khung hình: giả lập chụp ${fd.cap} fps → mã hoá ${fd.enc}/${fd.want} fps${fd.sw ? ' (mã hoá ' + fd.sw + ')' : ''}${fd.lim ? ' · ' + fd.lim : ''}`, fd.tip || 'FPS đang đạt mức mong muốn.');
+    out.textContent = lines.join('\n');
+    btn.disabled = false;
+    if (ok.length && inSession) { const b = document.createElement('button'); b.className = 'kbtn primary'; b.style.cssText = 'width:100%;height:42px;margin-top:8px'; b.textContent = 'Kết nối lại ngay với máy chủ mới';
+      b.onclick = () => { b.remove(); closeMenu(); scheduleReconnect('Đang chuyển sang máy chủ nhanh hơn…'); }; out.appendChild(b); }
+  });
+
+  // ---------- control panel ----------
+  function syncMenu() {
+    const k = qualityKey();
+    document.querySelectorAll('#qseg button').forEach((b) => b.classList.toggle('on', b.dataset.q === k));
+    document.querySelectorAll('#rseg button').forEach((b) => b.classList.toggle('on', b.dataset.r === rotMode()));
+    document.querySelectorAll('#tseg button').forEach((b) => b.classList.toggle('on', b.dataset.t === pref.get('touch', 'direct')));
+    $('#qnote').textContent = pref.get('quality2', '')
+      ? (relay && k === 'hi' ? 'Đang đi qua TURN: mức Mượt tốn dung lượng nhanh.' : '')
+      : 'Tự động: Mượt 60 fps khi nối thẳng, Siêu mượt 720p khi qua máy trung chuyển (Tiết kiệm nếu qua Metered).';
+    $('#tnote').textContent = padMode()
+      ? 'Kéo = di chuột · chạm = bấm · chạm 2 lần + kéo = kéo thả · giữ = nhấn giữ · nút ×2/R/▲/▼ cho máy tính.'
+      : 'Chạm = bấm · kéo = vuốt · giữ để hiện kính lúp, nhả tay để bấm đúng chỗ.';
+    $('#optLoupe').checked = loupeOn();
+    $('#optRipple').checked = rippleOn();
+    $('#optNav').checked = pref.get('nav', '0') === '1';
+    $('#optLoupe').closest('.tg').classList.toggle('hidden', padMode());
+    $('#gameOnly').classList.toggle('hidden', !caps.includes('macro'));
+    $('#oldApp').classList.toggle('hidden', caps.length > 0 || !dispW);
+    $('#optGame').checked = pref.get('game2', '0') === '1';
+    $('#optKeep').checked = pref.get('keep', '1') === '1';
+    $('#touchOpts').classList.toggle('hidden', gameOn());
+    updateMousebar();
+    renderGame();
+  }
+  function applyNav() {
+    const on = pref.get('nav', '0') === '1';
+    document.body.classList.toggle('shownav', on && inSession);
+    $('#minibar').classList.toggle('hidden', !on);
+    setTimeout(layout, 30);
+  }
+  function openMenu() { $('#sheet').classList.remove('open'); sendCtl({ t: 'game_state' }); syncMenu(); $('#menu').classList.remove('hidden'); $('#scrim').classList.remove('hidden'); }
+  function closeMenu() { $('#menu').classList.add('hidden'); $('#scrim').classList.add('hidden'); }
+  function toggleMenu() { if ($('#menu').classList.contains('hidden')) openMenu(); else closeMenu(); }
+  $('#scrim').addEventListener('pointerdown', (e) => { e.preventDefault(); closeMenu(); });
+  $('#menuClose').addEventListener('click', closeMenu);
+  $('#menu').querySelectorAll('.navrow [data-key]').forEach((b) => b.addEventListener('click', () => setTimeout(closeMenu, 120)));
+  $('#qseg').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-q]'); if (!b) return;
+    pref.set('quality2', b.dataset.q); sendQuality(); toast('Chất lượng: ' + QUALITY[b.dataset.q].label);
+  });
+  $('#rseg').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-r]'); if (!b) return;
+    pref.set('rotate', b.dataset.r); resetZoom(); syncMenu();
+  });
+  $('#tseg').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-t]'); if (!b) return;
+    pref.set('touch', b.dataset.t); syncMenu(); placeCursor();
+    toast(b.dataset.t === 'pad' ? 'Chế độ chuột: kéo để di con trỏ, chạm để bấm' : 'Chế độ chạm trực tiếp');
+  });
+  $('#optLoupe').addEventListener('change', (e) => pref.set('loupe', e.target.checked ? '1' : '0'));
+  $('#optRipple').addEventListener('change', (e) => pref.set('ripple', e.target.checked ? '1' : '0'));
+  $('#optNav').addEventListener('change', (e) => { pref.set('nav', e.target.checked ? '1' : '0'); applyNav(); });
+  $('#notif').addEventListener('click', () => { haptic(); sendCtl({ t: 'key', k: 'notifications' }); closeMenu(); });
+  const canFs = !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+  if (!canFs) $('#fs').classList.add('hidden');
+  function enterFullscreen() {
+    const el = document.documentElement;
+    try { const r = (el.requestFullscreen || el.webkitRequestFullscreen).call(el, { navigationUI: 'hide' }); r && r.catch && r.catch(() => {}); } catch {}
+  }
+  $('#fs').addEventListener('click', () => {
+    closeMenu();
+    if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else enterFullscreen();
+  });
+  if (!window.matchMedia('(pointer: fine)').matches) $('#pcnote').classList.add('hidden');
+
+  $('#bye').addEventListener('click', () => endSession(''));
+  $('#copySid').addEventListener('click', () => current && copy(current.id));
+  $('#go').addEventListener('click', () => { if (canFs && window.matchMedia('(pointer: coarse)').matches) enterFullscreen(); start(); });
+  $('#pw').addEventListener('keydown', (e) => { if (e.key === 'Enter') start(); });
+  $('#id').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#pw').focus(); });
+
+
+  usageTimer = null;
+  setInterval(() => { if (inSession && relay) refreshUsage(); }, 60000);
+
+  // Android app (ControllerActivity): hardware Back = Back on the remote device
+  window.rsBack = () => {
+    if (!inSession) return false;
+    if (!$('#menu').classList.contains('hidden')) closeMenu();
+    else if (sheet.classList.contains('open')) closeSheet();
+    else { haptic(); sendCtl({ t: 'key', k: 'back' }); }
+    return true;
+  };
+  if (new URLSearchParams(location.search).get('app') === 'android') { $('#hint').classList.add('hidden'); document.querySelector('.foot a').classList.add('hidden'); }
+  const qs = new URLSearchParams(location.search);
+  const qid = qs.get('id');
+  // The page (or the iPhone home-screen app) must not keep reopening with an ID pre-filled:
+  // consume the one-time parameters and clean the address.
+  if (qid || qs.get('v')) { try { history.replaceState(null, '', location.pathname); } catch {} }
+  // Start with empty fields: the user picks the device. Clear again shortly after load because
+  // iOS / Android autofill and "restore previous page" can put an old value back in a moment later.
+  const clearFields = () => {
+    if (inSession || qid) return;
+    for (const el of [$('#id'), $('#pw')]) if (document.activeElement !== el && !el.dataset.touched) el.value = '';
+  };
+  for (const el of [$('#id'), $('#pw')]) el.addEventListener('keydown', () => { el.dataset.touched = '1'; });
+  $('#recent').addEventListener('click', () => { $('#id').dataset.touched = $('#pw').dataset.touched = '1'; }, true);
+  // The keyboard may only open when the user taps a field. iOS Safari can hand focus back to the
+  // last field by itself (first load, returning from another page/app, back/forward cache):
+  // drop any focus the user did not ask for.
+  let userTapped = false;
+  for (const el of [$('#id'), $('#pw')]) el.addEventListener('pointerdown', () => { userTapped = true; });
+  const dropAutoFocus = () => {
+    if (inSession || userTapped) return;
+    const a = document.activeElement;
+    if (a && (a === $('#id') || a === $('#pw'))) a.blur();
+  };
+  const settle = () => { clearFields(); dropAutoFocus(); };
+  settle(); setTimeout(settle, 400); setTimeout(settle, 1500);
+  window.addEventListener('pageshow', (e) => {
+    if (inSession) return;
+    userTapped = false;
+    if (e.persisted) $('#id').dataset.touched = $('#pw').dataset.touched = '';
+    settle(); setTimeout(settle, 400);
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !inSession) { userTapped = false; setTimeout(dropAutoFocus, 50); setTimeout(dropAutoFocus, 400); }
+  });
+  if (qid) {
+    $('#id').value = fmtId(qid);
+    // after "Tải lại trang" during a session: reconnect straight away with the saved password
+    const saved = store.get().find((x) => x.id === rawId(qid));
+    if (qs.get('v') && saved && saved.pw) { $('#pw').value = saved.pw; setTimeout(start, 300); }
+  }
+  if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) $('#hint').classList.add('hidden');
+  renderRecent();
+})();
+</script>
+</body>
+</html>
