@@ -36,6 +36,8 @@ class StandbyService : Service() {
         const val ACTION_WATCHDOG = "com.example.remotescreen.STANDBY_WATCHDOG"
         private const val TAG = "StandbyService"
         private const val CHANNEL = "standby"
+        private const val CHANNEL_WAKE = "wake"
+        private const val NOTIF_WAKE = 9
 
         @Volatile var running = false
             private set
@@ -214,23 +216,83 @@ class StandbyService : Service() {
         lastWake = now
         prefs().edit().putBoolean("autostart", true).apply()
         Updater.allowAutoConfirm(this, 3 * 60_000L)
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
         // Turn the screen on (cannot bypass a PIN/pattern lock — Android forbids that).
         try {
-            val pm = getSystemService(POWER_SERVICE) as PowerManager
             @Suppress("DEPRECATION")
             val wl = pm.newWakeLock(
-                PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
                 "remotescreen:wake"
             )
-            wl.acquire(8000)
+            wl.acquire(10_000)
         } catch (t: Throwable) { Log.w(TAG, "wake lock", t) }
-        try {
+        val launched = try {
             startActivity(
                 Intent(this, MainActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
                     .putExtra("autostart", true)
             )
-        } catch (t: Throwable) { Log.w(TAG, "launch", t) }
+            true
+        } catch (t: Throwable) { Log.w(TAG, "launch", t); false }
+        // Màn hình tắt/khoá: Android chặn startActivity từ nền → phải nhờ thông báo toàn màn hình
+        // (giống cuộc gọi đến) mới mở được app khi máy đang ngủ.
+        showWakeNotification()
+        saveWakeDiag(launched, pm)
+    }
+
+    private fun wakeChannel() {
+        if (Build.VERSION.SDK_INT >= 26) {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_WAKE, "Đánh thức máy", NotificationManager.IMPORTANCE_HIGH).apply {
+                    setShowBadge(false)
+                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                }
+            )
+        }
+    }
+
+    private fun showWakeNotification() {
+        try {
+            wakeChannel()
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            val open = PendingIntent.getActivity(
+                this, 11,
+                Intent(this, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                    .putExtra("autostart", true),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            val n = Notification.Builder(this, CHANNEL_WAKE)
+                .setSmallIcon(android.R.drawable.ic_menu_view)
+                .setContentTitle("Remote Screen: có người muốn kết nối")
+                .setContentText("Đang mở màn hình để chia sẻ…")
+                .setCategory(Notification.CATEGORY_CALL)
+                .setPriority(Notification.PRIORITY_MAX)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .setContentIntent(open)
+                .setFullScreenIntent(open, true)
+                .setAutoCancel(true)
+                .setTimeoutAfter(60_000)
+                .build()
+            nm.notify(NOTIF_WAKE, n)
+        } catch (t: Throwable) { Log.w(TAG, "notify", t) }
+    }
+
+    /** Ghi lại vì sao lần đánh thức vừa rồi thành/bại — hiện trong app để debug từ xa. */
+    private fun saveWakeDiag(launched: Boolean, pm: PowerManager) {
+        try {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            val overlay = android.provider.Settings.canDrawOverlays(this)
+            val fsi = Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent()
+            val hhmmss = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+            val diag = hhmmss +
+                " · " + (if (pm.isInteractive) "màn hình đang bật" else "màn hình tắt") +
+                " · overlay=" + (if (overlay) "OK" else "THIẾU") +
+                " · toàn màn hình=" + (if (fsi) "OK" else "THIẾU") +
+                " · mở app=" + (if (launched) "OK" else "BỊ CHẶN")
+            prefs().edit().putString("wakeDiag", diag).apply()
+        } catch (t: Throwable) { Log.w(TAG, "diag", t) }
     }
 
     private fun shutdown() {

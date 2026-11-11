@@ -73,6 +73,20 @@ class MainActivity : ComponentActivity() {
     private lateinit var startBtn: Button
     private lateinit var advanced: LinearLayout
     private val prefs by lazy { getSharedPreferences("cfg", Context.MODE_PRIVATE) }
+
+    /** Mở trên màn hình khoá và tự bật màn hình: hai thuộc tính manifest không đủ trên một số ROM. */
+    private fun applyWakeScreenFlags() {
+        if (Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+        }
+    }
     private val ticker = object : Runnable {
         override fun run() { refresh(); statusText.postDelayed(this, 1000) }
     }
@@ -142,6 +156,7 @@ class MainActivity : ComponentActivity() {
     // ------------------------------------------------------------------ lifecycle
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        applyWakeScreenFlags()
         super.onCreate(savedInstanceState)
         @Suppress("DEPRECATION")
         window.statusBarColor = BG
@@ -548,8 +563,11 @@ class MainActivity : ComponentActivity() {
             if (ControlAccessibilityService.instance == null) miss.add("Trợ năng")
             if (!canOverlay()) miss.add("Hiện trên ứng dụng khác")
             if (!batteryOk()) miss.add("bỏ tối ưu pin")
-            awText.text = if (miss.isEmpty()) "Đang bật. Máy sẽ tự mở app + chia sẻ khi có người nhập ID."
+            if (!canFullScreen()) miss.add("thông báo toàn màn hình")
+            val base = if (miss.isEmpty()) "Đang bật. Máy sẽ tự mở app + chia sẻ khi có người nhập ID."
                 else "Đang bật nhưng còn thiếu quyền: ${miss.joinToString(", ")}. Bấm nút để cấp nốt."
+            val diag = prefs.getString("wakeDiag", "") ?: ""
+            awText.text = if (diag.isEmpty()) base else base + "\n\nLần đánh thức cuối: " + diag
             awText.setTextColor(if (miss.isEmpty()) OK else WARN)
             if (!ShareService.running && !StandbyService.running) StandbyService.startIfEnabled(this)
         } else {
@@ -564,6 +582,7 @@ class MainActivity : ComponentActivity() {
             if (ControlAccessibilityService.instance == null) { openA11y(); return }
             if (!canOverlay()) { requestOverlay(); return }
             if (!batteryOk()) { askBattery(); return }
+            if (!canFullScreen()) { requestFullScreen(); return }
             prefs.edit().putBoolean("autoShare", false).apply()
             startService(Intent(this, StandbyService::class.java).setAction(StandbyService.ACTION_STOP))
             toast("Đã tắt tự đánh thức")
@@ -574,11 +593,29 @@ class MainActivity : ComponentActivity() {
                 ControlAccessibilityService.instance == null -> { toast("Bật quyền Trợ năng cho Remote Screen"); openA11y() }
                 !canOverlay() -> { toast("Cho phép Hiện trên ứng dụng khác"); requestOverlay() }
                 !batteryOk() -> askBattery()
+                !canFullScreen() -> { toast("Cho phép thông báo toàn màn hình để máy tự mở khi đang khoá"); requestFullScreen() }
                 else -> toast("Đã bật. Máy luôn sẵn sàng được đánh thức.")
             }
             StandbyService.startIfEnabled(this)
         }
         renderAutoWake()
+    }
+
+    /** Android 14+ mới có khái niệm "thông báo toàn màn hình"; máy cũ luôn coi là có. */
+    private fun canFullScreen(): Boolean {
+        if (Build.VERSION.SDK_INT < 34) return true
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        return nm.canUseFullScreenIntent()
+    }
+
+    private fun requestFullScreen() {
+        if (Build.VERSION.SDK_INT >= 34) {
+            try {
+                startActivity(Intent("android.settings.MANAGE_APP_USE_FULL_SCREEN_INTENT", Uri.parse("package:$packageName")))
+                return
+            } catch (_: Throwable) {}
+        }
+        try { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) } catch (_: Throwable) {}
     }
 
     private fun requestOverlay() {
