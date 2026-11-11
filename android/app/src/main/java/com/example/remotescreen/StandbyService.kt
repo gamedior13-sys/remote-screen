@@ -76,7 +76,12 @@ class StandbyService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) { shutdown(); return START_NOT_STICKY }
-        if (running) return START_STICKY
+        val fromWatchdog = intent?.action == ACTION_WATCHDOG
+        if (running) {
+            // Đang sống: nếu vòng tự kiểm tra vừa nổ, hẹn vòng kế tiếp theo số phút hiện tại.
+            if (fromWatchdog) scheduleWatchdog()
+            return START_STICKY
+        }
         // Nothing to do if sharing is already live, or the owner turned auto-wake off.
         if (ShareService.running || !prefs().getBoolean("autoShare", true) || password().length < 6 || deviceId().isBlank()) {
             stopSelf(); return START_NOT_STICKY
@@ -88,7 +93,10 @@ class StandbyService : Service() {
         return START_STICKY
     }
 
-    /** Giữ chế độ chờ luôn sống: báo thức mỗi 10 phút tự kiểm tra và khởi động lại nếu bị giết. */
+    /** Số phút tự kiểm tra do chủ máy khai báo trong app (mặc định 10, nhận 1–240). */
+    private fun watchdogMin(): Int = prefs().getInt("watchdogMin", 10).coerceIn(1, 240)
+
+    /** Hẹn một vòng tự kiểm tra: nổ xong tự lên lịch vòng kế tiếp theo số phút hiện tại. */
     private fun scheduleWatchdog() {
         try {
             val am = getSystemService(ALARM_SERVICE) as AlarmManager
@@ -96,7 +104,8 @@ class StandbyService : Service() {
                 this, 12, Intent(this, StandbyService::class.java).setAction(ACTION_WATCHDOG),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
-            am.setInexactRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP, System.currentTimeMillis() + 10 * 60_000L, 10 * 60_000L, pi)
+            val ms = watchdogMin().toLong() * 60_000L
+            am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, System.currentTimeMillis() + ms, pi)
         } catch (t: Throwable) { Log.w(TAG, "watchdog", t) }
     }
 
