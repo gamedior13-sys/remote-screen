@@ -63,6 +63,8 @@
                 android:value="Keeps a connection so the owner can start screen sharing on this device remotely" />
         </service>
 
+        <!-- FCM: đánh thức app đã bị Android giết. Chỉ hoạt động khi FcmConfig có thông tin Firebase;
+             để trống thì app vẫn chạy bình thường như cũ. -->
         <service
             android:name=".WakeMessagingService"
             android:exported="false">
@@ -73,8 +75,9 @@
 
         <provider
             android:name=".FcmInitProvider"
+            android:authorities="${applicationId}.fcm-init"
             android:exported="false"
-            android:authorities="${applicationId}.fcminit" />
+            android:initOrder="100" />
 
         <receiver
             android:name=".BootReceiver"

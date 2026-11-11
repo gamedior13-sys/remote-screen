@@ -69,9 +69,11 @@ class ShareService : Service() {
         const val EXTRA_PASSWORD = "password"
         private const val TAG = "ShareService"
         private const val CHANNEL = "share"
-        private const val MAX_LONG_SIDE = 1600
+        // Cạnh dài tối đa của khung hình THẬT SỰ được chụp: 1280 ≈ 720p, nhẹ hơn 1600 rất nhiều
+    // (VirtualDisplay + copy GPU + encode đều giảm), khung hình đều hơn trên mạng yếu.
+    private const val MAX_LONG_SIDE = 1280
         private const val FPS = 30
-        private const val MAX_BITRATE_BPS = 4_000_000
+        private const val MAX_BITRATE_BPS = 3_000_000
 
         const val STATE_CONNECTING = 0
         const val STATE_READY = 1

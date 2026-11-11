@@ -105,7 +105,8 @@ async function start(silent) {
   current = { server, password };
   $('startBtn').disabled = true;
   try {
-    stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 60 }, audio: false });
+    // Chụp màn hình ở mức 720p-class ngay từ đầu: encode nhẹ hơn nhiều, khung hình đều hơn.
+    stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 60, width: { max: 1280 }, height: { max: 720 } }, audio: false });
   } catch (e) {
     $('startBtn').disabled = false;
     if (!silent) alert('Không lấy được màn hình: ' + (e && e.message ? e.message : e));
@@ -313,7 +314,13 @@ async function applyQuality(q) {
   } catch (_) {}
   try {
     const vt = stream.getVideoTracks()[0];
-    if (vt && q.fps) await vt.applyConstraints({ frameRate: q.fps });
+    if (vt) {
+      // Giảm độ phân giải TRƯỚC bộ mã hoá: cạnh dài do bộ điều khiển chọn (mặc định 720p-class).
+      const cap = Math.max(480, Math.min(1920, q.long || 1280));
+      const c = { width: { max: cap }, height: { max: cap } };
+      if (q.fps) c.frameRate = q.fps;
+      await vt.applyConstraints(c);
+    }
   } catch (_) {}
 }
 </script>

@@ -781,7 +781,9 @@
     if (q && QUALITY[q]) return q;
     const viaMetered = relay && turnPick && relayOf(turnPick.url) && relayOf(turnPick.url).name === 'Metered';
     // Kết nối thẳng (xanh): để NÉT full độ phân giải. Qua máy trung chuyển: nhẹ hơn cho đỡ trễ.
-    return viaMetered ? 'eco' : relay ? 'max' : 'hi';
+    // Mặc định 720p-class cho MỌI đường truyền: encode nhẹ hơn nhiều, khung hình đều hơn.
+    // 'bal' = 1280 cạnh dài / 30 fps / 2.5 Mbps; muốn nét hơn thì chọn 'Nét' trong menu (lưu lại).
+    return viaMetered ? 'eco' : 'bal';
   }
   function sendQuality() {
     const q = QUALITY[qualityKey()];

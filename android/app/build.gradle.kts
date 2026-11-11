@@ -41,12 +41,12 @@ android {
 }
 
 dependencies {
+    // FCM (đánh thức app đã bị Android giết). Firebase được khởi tạo thủ công trong FcmInitProvider
+    // nên KHÔNG cần google-services.json, cũng không cần plugin google-services.
+    implementation("com.google.firebase:firebase-messaging:24.0.1")
     // Prebuilt Google WebRTC for Android (maintained build, package org.webrtc)
     implementation("io.github.webrtc-sdk:android:125.6422.07")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-ktx:1.9.2")
-    // Firebase Cloud Messaging: gọi dậy app kể cả khi Android đã giết tiến trình (kết hợp
-    // WakeMessagingService + FcmInitProvider khởi tạo thủ công, KHÔNG cần google-services plugin).
-    implementation("com.google.firebase:firebase-messaging:24.0.3")
 }
