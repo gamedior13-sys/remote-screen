@@ -40,7 +40,7 @@
     <label>Mật khẩu (ít nhất 6 ký tự)</label>
     <input id="pw" type="password" autocomplete="off" placeholder="Đặt mật khẩu để điện thoại kết nối" />
     <button id="startBtn" class="primary">Bắt đầu chia sẻ</button>
-    <div class="hint">Trên điện thoại mở trang web, nhập <b>ID</b> hiện ở đây và mật khẩu này để xem & điều khiển máy tính.</div>
+    <div class="hint">Trên điện thoại mở trang web, nhập <b>ID</b> hiện ở đây và mật khẩu này để xem & điều khiển máy tính. Sau lần đầu, máy luôn ở chế độ chờ — điện thoại bấm kết nối là tự dậy.</div>
   </div>
 
   <div id="live" class="card" style="display:none">
@@ -50,19 +50,23 @@
     </div>
     <div class="status"><span class="dot" id="dot"></span><span id="statustxt">Đang kết nối…</span></div>
     <button id="stopBtn" class="stop">Dừng chia sẻ</button>
-    <div class="hint">Giữ cửa sổ này mở (có thể thu nhỏ). Đóng cửa sổ là dừng chia sẻ.</div>
+    <div class="hint">Giữ cửa sổ này mở (có thể thu nhỏ). Đóng cửa sổ chỉ là ẨN xuống khay — máy vẫn sẵn sàng bị đánh thức. Thoát hẳn: biểu tượng khay màu xanh → Thoát hẳn.</div>
   </div>
 </div>
 <div class="ver" id="ver"></div>
 
 <script>
-const APP_VER = '1.1.0';
+const APP_VER = '1.2.0';
 const DEFAULT_SERVER = 'https://remote-screen-phong.onrender.com';
 document.getElementById('ver').textContent = 'v' + APP_VER;
 
 const $ = (id) => document.getElementById(id);
 let ws = null, pc = null, dc = null, stream = null;
 let current = null, registeredId = null, running = false, wsGen = 0;
+// Chế độ chờ (standby): luôn đăng ký với server để điện thoại bấm kết nối là máy tự dậy.
+const STANDBY_START = new URLSearchParams(location.search).get('standby') === '1';
+let standbyMode = true;
+let wakeAuto = false;
 
 function status(text, kind) {
   $('statustxt').textContent = text;
@@ -78,29 +82,44 @@ async function init() {
   $('server').value = cfg.server || DEFAULT_SERVER;
   $('pw').value = cfg.password || '';
   if (cfg.id) registeredId = cfg.id;
+  // TỰ ĐỘNG vào chế độ chờ nếu đã lưu mật khẩu: điện thoại bấm kết nối là máy dậy ngay.
+  if ((cfg.password || '').length >= 6) {
+    current = { server: ($('server').value || DEFAULT_SERVER).trim(), password: $('pw').value.trim() };
+    openWs();
+  }
+  if (STANDBY_START) { $('form').style.display = 'none'; $('live').style.display = 'block'; }
 }
 init();
 
-$('startBtn').addEventListener('click', start);
+$('startBtn').addEventListener('click', () => start(false));
 $('stopBtn').addEventListener('click', stop);
+try { window.api.onCmd((c) => { if (c === 'standby' && running) stop(); }); } catch (_) {}
 
-async function start() {
+async function start(silent) {
   const server = ($('server').value || DEFAULT_SERVER).trim();
   const password = ($('pw').value || '').trim();
-  if (password.length < 6) { alert('Mật khẩu phải từ 6 ký tự trở lên.'); return; }
+  if (password.length < 6) {
+    if (silent) { status('Chưa đặt mật khẩu — không thể chờ kết nối từ xa', 'err'); return; }
+    alert('Mật khẩu phải từ 6 ký tự trở lên.'); return;
+  }
   current = { server, password };
   $('startBtn').disabled = true;
   try {
     stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 60 }, audio: false });
   } catch (e) {
     $('startBtn').disabled = false;
-    alert('Không lấy được màn hình: ' + (e && e.message ? e.message : e));
+    if (!silent) alert('Không lấy được màn hình: ' + (e && e.message ? e.message : e));
+    status('Không lấy được màn hình: ' + (e && e.message ? e.message : e), 'err');
     return;
   }
   try { await window.api.setCfg({ server, password, id: registeredId || '' }); } catch (_) {}
+  standbyMode = false; wakeAuto = false;
   running = true;
   $('form').style.display = 'none';
   $('live').style.display = 'block';
+  // Nối lại WS để server cập nhật: máy KHÔNG còn ở chế độ chờ nữa.
+  try { ws && (ws.onclose = null, ws.close()); } catch (_) {}
+  ws = null;
   openWs();
 }
 
@@ -110,9 +129,12 @@ function stop() {
   try { ws && (ws.onclose = null, ws.close()); } catch (_) {}
   ws = null;
   if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+  standbyMode = true; wakeAuto = false;
   $('live').style.display = 'none';
   $('form').style.display = 'block';
   $('startBtn').disabled = false;
+  openWs(); // đăng ký lại ở chế độ chờ — vẫn sẵn sàng bị đánh thức
+  try { window.api.report({ state: 'ready-standby', id: registeredId || '' }); } catch (_) {}
 }
 
 function openWs() {
@@ -121,6 +143,7 @@ function openWs() {
   ws.onopen = () => {
     if (gen !== wsGen) return;
     const reg = { type: 'register', password: current.password, platform: 'windows' };
+    if (standbyMode && !running) reg.standby = true;
     if (registeredId) reg.id = registeredId;
     wsSend(reg);
     status('Đang đăng ký với máy chủ…', 'warn');
@@ -135,11 +158,17 @@ function openWs() {
 }
 
 function onSig(m) {
+  if (m.type === 'wake') {   // máy chủ báo có người bấm kết nối: tự bật chia sẻ
+    if (!running && !wakeAuto) { wakeAuto = true; start(true); }
+    return;
+  }
   if (m.type === 'registered') {
     registeredId = m.id;
     $('idval').textContent = String(m.id).replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3');
     window.api.setCfg({ server: current.server, password: current.password, id: m.id });
-    status('Sẵn sàng — chờ điện thoại kết nối…', 'ok');
+    try { window.api.autostart(); } catch (_) {}
+    try { window.api.report({ state: (standbyMode && !running) ? 'ready-standby' : 'ready', id: m.id }); } catch (_) {}
+    status(standbyMode && !running ? 'Sẵn sàng — điện thoại bấm kết nối là máy dậy' : 'Sẵn sàng — chờ điện thoại kết nối…', 'ok');
     return;
   }
   if (m.type === 'error') {
@@ -185,11 +214,23 @@ async function startPeer(ice) {
 
   stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
+  // Chống lag/nhảy: chỉ báo "motion" + bitrate đều 3 Mbps, 30 fps, ưu tiên giữ fps
+  // (hết băng thông thì giảm độ phân giải thay vì đứng hình/nhảy vọt).
+  try { const vt0 = stream.getVideoTracks()[0]; if (vt0) vt0.contentHint = 'motion'; } catch (_) {}
+  try {
+    const sv = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+    if (sv) {
+      const prm = sv.getParameters();
+      prm.encodings = [{ maxBitrate: 3000000, maxFramerate: 30, degradationPreference: 'maintain-framerate' }];
+      await sv.setParameters(prm);
+    }
+  } catch (_) {}
+
   pc.onicecandidate = (e) => { if (e.candidate) wsSend({ type: 'signal', data: { candidate: e.candidate } }); };
   pc.onconnectionstatechange = () => {
     if (pc !== me) return;
     const s = pc.connectionState;
-    if (s === 'connected') status('Đang chia sẻ màn hình ✓', 'ok');
+    if (s === 'connected') { status('Đang chia sẻ màn hình ✓', 'ok'); try { window.api.report({ state: 'sharing', id: registeredId || '' }); } catch (_) {} }
     else if (s === 'disconnected') status('Mạng chập chờn…', 'warn');
     else if (s === 'failed') status('Kết nối thất bại, chờ thử lại…', 'err');
   };
@@ -228,6 +269,9 @@ function onCtrl(m) {
     case 'quality': applyQuality(m); break;
     case 'tap': api.exec({ op: 'tap', x: m.x, y: m.y, d: m.d }); break;
     case 'swipe': api.exec({ op: 'swipe', x1: m.x1, y1: m.y1, x2: m.x2, y2: m.y2, d: m.d }); break;
+    case 'mdbl': api.exec({ op: 'dbl', x: m.x, y: m.y }); break;
+    case 'mrc': api.exec({ op: 'mrc', x: m.x, y: m.y }); break;
+    case 'mscroll': api.exec({ op: 'wheel', d: (m.dy || 0) * 120 }); break;
     case 'td': api.exec({ op: 'down', i: m.i, x: m.x, y: m.y }); break;
     case 'tm': (m.p || []).forEach((pt) => { if (Array.isArray(pt) && pt.length >= 3) api.exec({ op: 'move', i: pt[0], x: pt[1], y: pt[2] }); }); break;
     case 'tu': api.exec({ op: 'up', i: m.i }); break;
