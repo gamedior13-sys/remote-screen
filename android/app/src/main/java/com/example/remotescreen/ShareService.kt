@@ -155,6 +155,8 @@ class ShareService : Service() {
         // Đã có phiên chia sẻ: tắt bộ tự bấm hộp thoại, tránh bấm nhầm lần hai (Android sẽ huỷ phiên).
         ControlAccessibilityService.instance?.endConfirmLoop()
         ensureScreenOn()
+        acquireLocks()
+        addKeepAliveOverlay()      // PHẢI chạy trước khi đọc keepView, nếu không diag luôn báo sai
         try {
             val inter = (getSystemService(POWER_SERVICE) as android.os.PowerManager).isInteractive
             val ov = android.provider.Settings.canDrawOverlays(this)
@@ -164,8 +166,7 @@ class ShareService : Service() {
                     " · overlay=" + (if (ov) "OK" else "THIẾU") + " · giữ sáng=" + (if (keepView != null) "OK" else ("không [" + keepError + "]"))
             )
         } catch (_: Throwable) {}
-        acquireLocks()
-        addKeepAliveOverlay()
+        watchScreen()
 
         thread(name = "init") {
             try {
@@ -186,6 +187,31 @@ class ShareService : Service() {
      * Nếu màn hình đang tắt lúc phiên bắt đầu, khung hình gửi đi sẽ ĐEN hoàn toàn (đo thật: avgLum=0).
      * Bật lại màn hình: wake lock + thông báo toàn màn hình (đường duy nhất Android cho phép).
      */
+    /** Canh màn hình tắt giữa phiên (wake lock + overlay có thể bị ROM bỏ qua): bật lại + báo về server. */
+    private fun watchScreen() {
+        thread(name = "screen-watch") {
+            var tries = 0
+            while (running && !stopping && tries < 20) {
+                try { Thread.sleep(10_000) } catch (_: InterruptedException) { break }
+                if (!running || stopping) break
+                val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+                if (pm.isInteractive) continue
+                tries++
+                FcmPush.reportDiag(applicationContext, "màn hình tắt giữa phiên (lần $tries) — bật lại")
+                try {
+                    @Suppress("DEPRECATION")
+                    val wl = pm.newWakeLock(
+                        android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                        "remotescreen:screen2"
+                    )
+                    wl.acquire(20_000)
+                } catch (_: Throwable) {}
+                StandbyService.showFullScreenWake(applicationContext)
+                if (keepView == null) addKeepAliveOverlay()
+            }
+        }
+    }
+
     private fun ensureScreenOn() {
         try {
             val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
