@@ -214,6 +214,7 @@ class StandbyService : Service() {
         if (ShareService.running) { shutdown(); return }   // real sharing owns the ID now
         ws = http.newWebSocket(Request.Builder().url(wsUrl()).build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (ShareService.running) { try { webSocket.close(1000, "sharing") } catch (_: Throwable) {}; return }
                 val reg = JSONObject().put("type", "register").put("id", deviceId()).put("password", password()).put("standby", true)
                 val fcm = prefs().getString("fcm", "") ?: ""
                 if (fcm.isNotEmpty()) reg.put("fcm", fcm)

@@ -546,8 +546,16 @@ wss.on('connection', (ws, req) => {
       const existing = id && devices.get(id);
       if (existing) {
         // Allow a reconnecting device to take over its own ID only with the same password.
-        if (!safeEqual(existing.pwHash, pwHash)) id = null;
-        else { existing.ws.role = null; try { existing.ws.terminate(); } catch {} }
+        if (!safeEqual(existing.pwHash, pwHash)) {
+          id = null;
+        } else if (existing.standby === false && m.standby === true && existing.ws && existing.ws.readyState === 1) {
+          // Đang chia sẻ thật: socket chờ (standby) không được cướp ID, nếu không controller
+          // sẽ luôn nhận 'waking' và máy bật/tắt chia sẻ liên tục.
+          return send(ws, { type: 'error', code: 'sharing', message: 'Device is sharing' });
+        } else {
+          existing.ws.role = null;
+          try { existing.ws.terminate(); } catch {}
+        }
       }
       if (!id) id = newId();
       ws.role = 'device';

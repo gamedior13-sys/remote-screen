@@ -175,6 +175,7 @@ class ShareService : Service() {
                 connectSignaling()
             } catch (t: Throwable) {
                 Log.e(TAG, "startup failed", t)
+                FcmPush.reportDiag(applicationContext, "khởi động lỗi: " + t.javaClass.simpleName + ": " + (t.message ?: ""))
                 shutdown()
             }
         }
@@ -482,7 +483,10 @@ class ShareService : Service() {
         helper = SurfaceTextureHelper.create("capture", eglBase!!.eglBaseContext)
         videoSource = f.createVideoSource(true /* isScreencast */)
         capturer = ScreenCapturerAndroid(permissionData, object : MediaProjection.Callback() {
-            override fun onStop() { shutdown() }
+            override fun onStop() {
+                FcmPush.reportDiag(applicationContext, "projection onStop — Android huỷ phiên chia sẻ")
+                shutdown()
+            }
         })
         capturer!!.initialize(helper, applicationContext, videoSource!!.capturerObserver)
         capturer!!.startCapture(w, h, FPS)
