@@ -30,21 +30,23 @@ object FcmConfig {
 
 /** Khởi tạo Firebase ngay khi tiến trình app bắt đầu (kể cả khi app đã bị Android giết). */
 class FcmInitProvider : ContentProvider() {
-    override fun onCreate(): Boolean = try {
-        val ctx = context ?: return true
-        if (FcmConfig.enabled && FirebaseApp.getApps(ctx).isEmpty()) {
-            FirebaseApp.initializeApp(
-                ctx,
-                FirebaseOptions.Builder()
-                    .setProjectId(FcmConfig.PROJECT_ID)
-                    .setApplicationId(FcmConfig.APPLICATION_ID)
-                    .setApiKey(FcmConfig.API_KEY)
-                    .setGcmSenderId(FcmConfig.SENDER_ID)
-                    .build()
-            )
-        }
-        true
-    } catch (t: Throwable) { false }
+    override fun onCreate(): Boolean {
+        return try {
+            val ctx = context
+            if (ctx != null && FcmConfig.enabled && FirebaseApp.getApps(ctx).isEmpty()) {
+                FirebaseApp.initializeApp(
+                    ctx,
+                    FirebaseOptions.Builder()
+                        .setProjectId(FcmConfig.PROJECT_ID)
+                        .setApplicationId(FcmConfig.APPLICATION_ID)
+                        .setApiKey(FcmConfig.API_KEY)
+                        .setGcmSenderId(FcmConfig.SENDER_ID)
+                        .build()
+                )
+            }
+            true
+        } catch (t: Throwable) { false }
+    }
 
     override fun query(uri: Uri, projection: Array<String>?, selection: String?, selectionArgs: Array<String>?, sortOrder: String?): Cursor? = null
     override fun getType(uri: Uri): String? = null
