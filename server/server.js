@@ -262,6 +262,15 @@ app.post('/fcm', (req, res) => {
   res.json({ ok: true });
 });
 
+// FCM diagnostics for the wake path: is the service account loaded, and how many phones reported a token?
+app.get('/fcmcheck', (_req, res) => {
+  const ids = Object.keys(presence);
+  res.set('Cache-Control', 'no-store').json({
+    configured: !!fcmCreds,
+    registered: ids.length,
+    withToken: ids.filter((k) => presence[k] && presence[k].fcm).length,
+  });
+});
 // Versions for the "sync" buttons: the web page (hash of index.html) and the newest Android build
 // (version.json is written by the CI next to remote-screen.apk).
 const WEB_VERSION = (() => {

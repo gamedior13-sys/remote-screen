@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -41,8 +42,8 @@ android {
 }
 
 dependencies {
-    // FCM (đánh thức app đã bị Android giết). Firebase được khởi tạo thủ công trong FcmInitProvider
-    // nên KHÔNG cần google-services.json, cũng không cần plugin google-services.
+    // FCM (đánh thức app đã bị Android giết). Plugin google-services đọc android/app/google-services.json
+    // và tự sinh resource Firebase; FcmInitProvider chỉ còn là đường dự phòng khi thiếu file cấu hình.
     implementation("com.google.firebase:firebase-messaging:24.0.1")
     // Prebuilt Google WebRTC for Android (maintained build, package org.webrtc)
     implementation("io.github.webrtc-sdk:android:125.6422.07")

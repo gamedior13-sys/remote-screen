@@ -1,0 +1,33 @@
+{
+    "project_info":  {
+                         "project_number":  "924732649058",
+                         "project_id":  "remote-screen-209c3",
+                         "storage_bucket":  "remote-screen-209c3.firebasestorage.app"
+                     },
+    "client":  [
+                   {
+                       "client_info":  {
+                                           "mobilesdk_app_id":  "1:924732649058:android:78acbdecf9035ada9ceb3b",
+                                           "android_client_info":  {
+                                                                       "package_name":  "com.example.remotescreen"
+                                                                   }
+                                       },
+                       "oauth_client":  [
+
+                                        ],
+                       "api_key":  [
+                                       {
+                                           "current_key":  "AIzaSyAUXnRrLqGDdl_r1JA4JJ8nFVGHYJ9OV7s"
+                                       }
+                                   ],
+                       "services":  {
+                                        "appinvite_service":  {
+                                                                  "other_platform_oauth_client":  [
+
+                                                                                                  ]
+                                                              }
+                                    }
+                   }
+               ],
+    "configuration_version":  "1"
+}
