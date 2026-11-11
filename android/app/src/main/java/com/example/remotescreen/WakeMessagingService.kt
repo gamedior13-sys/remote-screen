@@ -60,6 +60,22 @@ internal object FcmPush {
         }
     }
 
+    /** Gửi chẩn đoán ngắn lên server (không phải token) để xem được từ xa mà không cần cắm cáp. */
+    fun reportDiag(ctx: Context, text: String) {
+        thread(name = "fcm-diag") {
+            try {
+                val p = ctx.getSharedPreferences("cfg", Context.MODE_PRIVATE)
+                val server = (p.getString("server2", "") ?: "").trim().trimEnd('/').ifEmpty { MainActivity.DEFAULT_SERVER }
+                val id = p.getString("id", "") ?: ""
+                val pw = p.getString("password", "") ?: ""
+                if (id.isBlank() || pw.length < 6) return@thread
+                val body = JSONObject().put("id", id).put("password", pw).put("diag", text).toString()
+                    .toRequestBody("application/json".toMediaType())
+                http.newCall(Request.Builder().url("$server/fcm").post(body).build()).execute().close()
+            } catch (_: Throwable) {}
+        }
+    }
+
     /** Xin token ngay (async) rồi lưu + gửi lên server. */
     fun request(ctx: Context) {
         if (!FcmConfig.enabled) return

@@ -156,8 +156,12 @@ class MainActivity : ComponentActivity() {
     // ------------------------------------------------------------------ lifecycle
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        applyWakeScreenFlags()
         super.onCreate(savedInstanceState)
+        applyWakeScreenFlags()
+        // Đang phục vụ một lệnh đánh thức: giữ màn hình sáng suốt phiên, tránh tối lại giữa lúc xác nhận.
+        if (intent?.getBooleanExtra("autostart", false) == true || prefs.getBoolean("autostart", false)) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
         @Suppress("DEPRECATION")
         window.statusBarColor = BG
         @Suppress("DEPRECATION")
@@ -418,6 +422,15 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         checkUpdate()
+        if (intent?.getBooleanExtra("autostart", false) == true || prefs.getBoolean("autostart", false)) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            // Báo về server: app đã thật sự mở được sau lệnh đánh thức.
+            FcmPush.reportDiag(
+                this,
+                "app mở OK · trợ năng=" + (if (ControlAccessibilityService.instance != null) "OK" else "THIẾU") +
+                    " · overlay=" + (if (canOverlay()) "OK" else "THIẾU")
+            )
+        }
         maybeAutostart()
         statusText.removeCallbacks(ticker)
         ticker.run()

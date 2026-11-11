@@ -224,8 +224,10 @@ class StandbyService : Service() {
                 PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
                 "remotescreen:wake"
             )
-            wl.acquire(10_000)
+            wl.acquire(60_000)
         } catch (t: Throwable) { Log.w(TAG, "wake lock", t) }
+        // Đăng thông báo toàn màn hình TRƯỚC: hệ thống mới có cớ bật màn hình lên.
+        showWakeNotification()
         val launched = try {
             startActivity(
                 Intent(this, MainActivity::class.java)
@@ -234,9 +236,6 @@ class StandbyService : Service() {
             )
             true
         } catch (t: Throwable) { Log.w(TAG, "launch", t); false }
-        // Màn hình tắt/khoá: Android chặn startActivity từ nền → phải nhờ thông báo toàn màn hình
-        // (giống cuộc gọi đến) mới mở được app khi máy đang ngủ.
-        showWakeNotification()
         saveWakeDiag(launched, pm)
     }
 
@@ -292,6 +291,7 @@ class StandbyService : Service() {
                 " · toàn màn hình=" + (if (fsi) "OK" else "THIẾU") +
                 " · mở app=" + (if (launched) "OK" else "BỊ CHẶN")
             prefs().edit().putString("wakeDiag", diag).apply()
+            FcmPush.reportDiag(applicationContext, diag)
         } catch (t: Throwable) { Log.w(TAG, "diag", t) }
     }
 

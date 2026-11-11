@@ -255,9 +255,12 @@ app.post('/fcm', (req, res) => {
   const b = req.body || {};
   const id = String(b.id || '').replace(/\s+/g, '');
   const fcm = String(b.fcm || '').trim();
+  const diag = typeof b.diag === 'string' ? b.diag.slice(0, 300) : '';
   const pr = presence[id];
-  if (!pr || !fcm || !safeEqual(pr.pwHash, sha(String(b.password || '')))) return res.status(403).json({ ok: false });
-  pr.fcm = fcm;
+  if (!pr || !safeEqual(pr.pwHash, sha(String(b.password || '')))) return res.status(403).json({ ok: false });
+  if (!fcm && !diag) return res.status(400).json({ ok: false });
+  if (fcm) pr.fcm = fcm;
+  if (diag) { pr.diag = diag; pr.diagTs = Date.now(); }
   savePresence();
   res.json({ ok: true });
 });
@@ -269,6 +272,13 @@ app.get('/fcmcheck', (_req, res) => {
     configured: !!fcmCreds,
     registered: ids.length,
     withToken: ids.filter((k) => presence[k] && presence[k].fcm).length,
+    // Chẩn đoán mới nhất do điện thoại gửi lên (không kèm ID/mật khẩu) — để debug wake từ xa.
+    lastDiag: (() => {
+      const rows = ids.map((k) => presence[k]).filter((p) => p && p.diag);
+      if (!rows.length) return null;
+      const last = rows.sort((a, b) => (b.diagTs || 0) - (a.diagTs || 0))[0];
+      return { text: last.diag, agoSeconds: Math.round((Date.now() - (last.diagTs || 0)) / 1000) };
+    })(),
   });
 });
 // Versions for the "sync" buttons: the web page (hash of index.html) and the newest Android build
