@@ -2,11 +2,15 @@
 /**
  * Remote Screen - PC partner (Windows), Electron main process.
  *
- * Giai đoạn 2: chia sẻ màn hình + THỰC THI lệnh điều khiển từ web (touch -> chuột,
- * phím đặt tên -> phím Windows, text/settext -> gõ chữ). Thực thi qua một tiến trình
- * PowerShell nền bền dùng Win32 SendInput — không cần native module.
+ * Giai đoạn 2.5:
+ *  - Chia sẻ màn hình + THỰC THI lệnh điều khiển từ web (touch -> chuột, phím, text).
+ *  - CHẾ ĐỘ CHỜ (standby): app chạy nền ẩn, đăng ký standby:true; web bấm kết nối
+ *    -> server gửi 'wake' -> app tự bật chia sẻ, không cần ai đụng vào máy tính.
+ *  - Tự khởi động cùng Windows (Run key trỏ tới file exe thật + --standby).
+ *  - Chuột ảo: nhận mdbl/mrc/mscroll (đúp, chuột phải, cuộn) ngoài tap/swipe thường.
+ * Thực thi qua một tiến trình PowerShell nền bền dùng Win32 SendInput — không cần native module.
  */
-const { app, BrowserWindow, ipcMain, session, desktopCapturer } = require('electron');
+const { app, BrowserWindow, ipcMain, session, desktopCapturer, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -14,32 +18,63 @@ const { spawn } = require('child_process');
 // Chỉ cho chạy một bản.
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
+const START_STANDBY = process.argv.includes('--standby') || process.argv.includes('--silent');
 let win = null;
+let tray = null;
+let quitting = false;
 const cfgPath = () => path.join(app.getPath('userData'), 'config.json');
+const statusPath = () => path.join(app.getPath('userData'), 'status.json');
 function loadCfg() { try { return JSON.parse(fs.readFileSync(cfgPath(), 'utf8')); } catch { return {}; } }
 function saveCfg(c) { try { fs.writeFileSync(cfgPath(), JSON.stringify(c)); } catch (_) {} }
 
-function createWindow() {
+const TRAY_ICON = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAo0lEQVR4nO2XwQmAMAxF048j6Ah2MR1LF9MRdAfFQ0EktRg08ZB3TeH9NNBQImNCrtB2y/amaB4b1hW+FpeCQFPOOaAp51wgY6DdfSI5QcbAOkB1V5yG+jVR7Nd/3gA8APkIjIEHIB/Bn3dBzLzfagEkS+ppaDw6XZBIbgySAJxMOi6QMbj7NJRIXUu6T05IxFwIKbgm0uDsQq6gIT8w/5yaswN2JzXw3WveKAAAAABJRU5ErkJggg==';
+
+function createWindow(hidden) {
   win = new BrowserWindow({
     width: 760,
     height: 660,
     resizable: true,
+    show: !hidden,
     backgroundColor: '#0b0f17',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      backgroundThrottling: false,
     },
   });
   win.setMenuBarVisibility(false);
-  win.loadFile('index.html');
+  win.loadFile('index.html', hidden ? { query: { standby: '1' } } : {});
+  // Đóng cửa sổ = ẩn xuống khay, app vẫn chạy để điện thoại đánh thức được bất cứ lúc nào.
+  win.on('close', (e) => {
+    if (!quitting) { e.preventDefault(); win.hide(); }
+  });
 }
 
-app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
+function showWindow() {
+  if (!win) createWindow(false);
+  else { win.show(); win.focus(); }
+}
+
+function createTray() {
+  try {
+    tray = new Tray(nativeImage.createFromBuffer(Buffer.from(TRAY_ICON, 'base64')));
+    tray.setToolTip('Remote Screen PC');
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: 'Mở Remote Screen PC', click: () => showWindow() },
+      { label: 'Chờ kết nối từ xa (standby)', click: () => { try { if (win) win.webContents.send('cmd', 'standby'); win && win.hide(); } catch (_) {} } },
+      { type: 'separator' },
+      { label: 'Thoát hẳn', click: () => { quitting = true; app.quit(); } },
+    ]));
+    tray.on('double-click', () => showWindow());
+  } catch (e) { console.warn('tray failed', e); }
+}
+
+app.on('second-instance', () => { if (win) { win.show(); if (win.isMinimized()) win.restore(); win.focus(); } });
 
 app.whenReady().then(() => {
   // Tự cấp quyền chia sẻ TOÀN BỘ màn hình chính cho getDisplayMedia — không hiện hộp chọn,
-  // để sau này có thể tự chia sẻ không cần thao tác tay.
+  // để chế độ standby tự chia sẻ được khi được đánh thức từ xa.
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
       if (sources && sources.length) callback({ video: sources[0], audio: false });
@@ -47,15 +82,37 @@ app.whenReady().then(() => {
     }).catch(() => callback({}));
   }, { useSystemPicker: false });
 
-  createWindow();
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  createWindow(START_STANDBY);
+  createTray();
+  app.on('activate', () => showWindow());
 });
 
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-app.on('before-quit', () => { try { if (worker) worker.kill(); } catch (_) {} });
+app.on('window-all-closed', () => { /* giữ app chạy nền cho standby — thoát qua khay */ });
+app.on('before-quit', () => { quitting = true; try { if (worker) worker.kill(); } catch (_) {} });
 
 ipcMain.handle('cfg-get', () => loadCfg());
 ipcMain.handle('cfg-set', (_e, c) => { saveCfg(c || {}); return true; });
+
+// Tự khởi động cùng Windows: Run key trỏ tới file exe ĐANG CHẠY (portable exe
+// đặt biến PORTABLE_EXECUTABLE_FILE = đường dẫn exe gốc, không phải bản tạm).
+ipcMain.on('enable-autostart', () => {
+  try {
+    const exe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+    app.setLoginItemSettings({ openAtLogin: true, args: ['--standby'], path: exe });
+    console.log('[autostart]', exe);
+  } catch (e) { console.warn('autostart failed', e); }
+});
+
+ipcMain.on('disable-autostart', () => { try { app.setLoginItemSettings({ openAtLogin: false }); } catch (_) {} });
+
+// Ghi trạng thái ra file để kiểm chứng từ ngoài (test tự động, debug).
+ipcMain.on('status-report', (_e, s) => {
+  try {
+    const st = Object.assign({}, s || {}, { ts: Date.now() });
+    fs.writeFileSync(statusPath(), JSON.stringify(st));
+    if (tray) tray.setToolTip('Remote Screen PC — ' + (st.state || '?') + (st.id ? ' · ID ' + st.id : ''));
+  } catch (_) {}
+});
 
 // ---------------------------------------------------------------------------
 // Thực thi lệnh điều khiển: một PowerShell ẩn chạy lâu dài, đọc JSON từng dòng
@@ -120,6 +177,13 @@ while ($true) {
       $d = [int][Math]::Max(15, [Math]::Min(1500, [double]$j.d))
       Start-Sleep -Milliseconds $d
       [Inj]::Button($false, 'left')
+    }
+    elseif ($op -eq 'dbl') {
+      [Inj]::MoveAbs([double]$j.x, [double]$j.y)
+      Start-Sleep -Milliseconds 15
+      [Inj]::Button($true, 'left'); Start-Sleep -Milliseconds 40; [Inj]::Button($false, 'left')
+      Start-Sleep -Milliseconds 110
+      [Inj]::Button($true, 'left'); Start-Sleep -Milliseconds 40; [Inj]::Button($false, 'left')
     }
     elseif ($op -eq 'swipe') {
       $x1 = [double]$j.x1; $y1 = [double]$j.y1; $x2 = [double]$j.x2; $y2 = [double]$j.y2
@@ -208,6 +272,12 @@ function execute(c) {
       pointers.delete(c.i);
       if (!pointers.size) workerSend({ op: 'button', down: false, b: 'left' }); break;
     case 'tap': workerSend({ op: 'tap', x: c.x, y: c.y, d: c.d || 60 }); break;
+    case 'dbl': workerSend({ op: 'dbl', x: c.x, y: c.y }); break;
+    case 'mrc':
+      workerSend({ op: 'move', x: c.x, y: c.y });
+      workerSend({ op: 'button', down: true, b: 'right' });
+      workerSend({ op: 'button', down: false, b: 'right' });
+      break;
     case 'swipe': workerSend({ op: 'swipe', x1: c.x1, y1: c.y1, x2: c.x2, y2: c.y2, ms: c.d || 300 }); break;
     case 'wheel': workerSend({ op: 'wheel', d: c.d || 0 }); break;
     case 'del': if (c.n > 0) workerSend({ op: 'del', n: Math.min(200, c.n | 0) }); break;
