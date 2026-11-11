@@ -570,6 +570,8 @@ wss.on('connection', (ws, req) => {
         pwHash,
         fcm: String(m.fcm || (presence[id] && presence[id].fcm) || ''),
         ts: Date.now(),
+        // Vừa đăng ký với tư cách đang chia sẻ thật (không phải standby).
+        ...(m.standby ? {} : { lastSharing: Date.now() }),
       };
       savePresence();
       return send(ws, { type: 'registered', id });
@@ -595,7 +597,13 @@ wss.on('connection', (ws, req) => {
       if (dev.standby) {
         // Máy đang ở chế độ chờ, chưa chia sẻ: đánh thức nó, bảo controller chờ rồi thử lại.
         const nowT = Date.now();
-        if (!dev.lastWake || nowT - dev.lastWake > 8000) { dev.lastWake = nowT; send(dev.ws, { type: 'wake' }); }
+        // Vừa chia sẻ xong / đang nối lại socket (<90 s): KHÔNG đánh thức nữa, chỉ bảo chờ.
+        // Nếu không, mỗi 8-15 giây app lại bị mở lên và phiên không bao giờ ổn định.
+        const justShared = presence[idc] && presence[idc].lastSharing && nowT - presence[idc].lastSharing < 90_000;
+        if (!justShared && (!dev.lastWake || nowT - dev.lastWake > 20_000)) {
+          dev.lastWake = nowT;
+          send(dev.ws, { type: 'wake' });
+        }
         return send(ws, { type: 'error', code: 'waking', message: 'Waking device' });
       }
       if (dev.controller && dev.controller !== ws) {
