@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.InputType
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -68,6 +69,7 @@ class MainActivity : ComponentActivity() {
     private var updLatest: Long = 0
     private lateinit var awBtn: Button
     private lateinit var awText: TextView
+    private lateinit var awMinEdit: EditText
     private lateinit var startBtn: Button
     private lateinit var advanced: LinearLayout
     private val prefs by lazy { getSharedPreferences("cfg", Context.MODE_PRIVATE) }
@@ -265,6 +267,37 @@ class MainActivity : ComponentActivity() {
             setOnClickListener { toggleAutoWake() }
         }
         awCard.addView(awBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(12) })
+
+        // ---- số phút tự kiểm tra: chủ máy chủ động khai báo
+        val awMinRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(10), 0, 0)
+        }
+        awMinRow.addView(label("Tự kiểm tra mỗi", 13f), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        awMinEdit = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText(prefs.getInt("watchdogMin", 10).toString())
+            textSize = 15f; setTextColor(TEXT); gravity = Gravity.CENTER
+            background = rounded(BG, 12, LINE)
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: android.text.Editable) {
+                    val v = s.toString().toIntOrNull() ?: return
+                    try {
+                        prefs.edit().putInt("watchdogMin", v.coerceIn(1, 240)).apply()
+                        // Áp dụng ngay: hẹn lại vòng tự kiểm tra theo số phút vừa khai báo.
+                        if (StandbyService.running) {
+                            startService(Intent(this@MainActivity, StandbyService::class.java).setAction(StandbyService.ACTION_WATCHDOG))
+                        }
+                    } catch (_: Throwable) {}
+                }
+            })
+        }
+        awMinRow.addView(awMinEdit, LinearLayout.LayoutParams(dp(72), dp(42)))
+        awMinRow.addView(label("phút", 13f))
+        awCard.addView(awMinRow)
+        awCard.addView(label("Báo thức tự kiểm tra: càng nhỏ càng được cứu sớm (1–240 phút).", 12f), lp(0))
         root.addView(awCard, lp(0))
 
         // ---- this phone can also control other devices (Android / PC)
