@@ -148,6 +148,11 @@ class ShareService : Service() {
         state = STATE_CONNECTING
         // Đã có phiên chia sẻ: tắt bộ tự bấm hộp thoại, tránh bấm nhầm lần hai (Android sẽ huỷ phiên).
         ControlAccessibilityService.instance?.endConfirmLoop()
+        ensureScreenOn()
+        try {
+            val inter = (getSystemService(POWER_SERVICE) as android.os.PowerManager).isInteractive
+            FcmPush.reportDiag(this, "chia sẻ đã bật · màn hình=" + (if (inter) "bật" else "tắt"))
+        } catch (_: Throwable) {}
         acquireLocks()
 
         thread(name = "init") {
@@ -162,6 +167,25 @@ class ShareService : Service() {
             }
         }
         return START_NOT_STICKY
+    }
+
+    /**
+     * Nếu màn hình đang tắt lúc phiên bắt đầu, khung hình gửi đi sẽ ĐEN hoàn toàn (đo thật: avgLum=0).
+     * Bật lại màn hình: wake lock + thông báo toàn màn hình (đường duy nhất Android cho phép).
+     */
+    private fun ensureScreenOn() {
+        try {
+            val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+            if (pm.isInteractive) return
+            FcmPush.reportDiag(this, "màn hình tắt lúc bắt đầu chia sẻ — đang xin bật màn hình")
+            @Suppress("DEPRECATION")
+            val wl = pm.newWakeLock(
+                android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "remotescreen:screen"
+            )
+            wl.acquire(30_000)
+            StandbyService.showFullScreenWake(applicationContext)
+        } catch (t: Throwable) { Log.w(TAG, "screen", t) }
     }
 
     // ---------------------------------------------------------------- notification

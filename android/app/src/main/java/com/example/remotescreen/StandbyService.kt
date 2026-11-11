@@ -42,6 +42,43 @@ class StandbyService : Service() {
         @Volatile var running = false
             private set
 
+        private const val NOTIF_FULLSCREEN = 9
+
+        /** Thông báo "toàn màn hình": cách duy nhất để app ở nền bật màn hình/mở app khi máy đang ngủ. */
+        fun showFullScreenWake(ctx: Context) {
+            try {
+                val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                if (Build.VERSION.SDK_INT >= 26) {
+                    nm.createNotificationChannel(
+                        NotificationChannel("wake", "Đánh thức máy", NotificationManager.IMPORTANCE_HIGH).apply {
+                            setShowBadge(false)
+                            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                        }
+                    )
+                }
+                val open = PendingIntent.getActivity(
+                    ctx, 11,
+                    Intent(ctx, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                        .putExtra("autostart", true),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+                val n = Notification.Builder(ctx, "wake")
+                    .setSmallIcon(android.R.drawable.ic_menu_view)
+                    .setContentTitle("Remote Screen: có người muốn kết nối")
+                    .setContentText("Đang mở màn hình để chia sẻ…")
+                    .setCategory(Notification.CATEGORY_CALL)
+                    .setPriority(Notification.PRIORITY_MAX)
+                    .setVisibility(Notification.VISIBILITY_PUBLIC)
+                    .setContentIntent(open)
+                    .setFullScreenIntent(open, true)
+                    .setAutoCancel(true)
+                    .setTimeoutAfter(60_000)
+                    .build()
+                nm.notify(NOTIF_FULLSCREEN, n)
+            } catch (t: Throwable) { Log.w(TAG, "fullscreen notify", t) }
+        }
+
         /** Start standby if the owner enabled auto-wake and a password is set. */
         fun startIfEnabled(ctx: Context) {
             val p = ctx.getSharedPreferences("cfg", Context.MODE_PRIVATE)
@@ -251,32 +288,7 @@ class StandbyService : Service() {
         }
     }
 
-    private fun showWakeNotification() {
-        try {
-            wakeChannel()
-            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-            val open = PendingIntent.getActivity(
-                this, 11,
-                Intent(this, MainActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-                    .putExtra("autostart", true),
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
-            val n = Notification.Builder(this, CHANNEL_WAKE)
-                .setSmallIcon(android.R.drawable.ic_menu_view)
-                .setContentTitle("Remote Screen: có người muốn kết nối")
-                .setContentText("Đang mở màn hình để chia sẻ…")
-                .setCategory(Notification.CATEGORY_CALL)
-                .setPriority(Notification.PRIORITY_MAX)
-                .setVisibility(Notification.VISIBILITY_PUBLIC)
-                .setContentIntent(open)
-                .setFullScreenIntent(open, true)
-                .setAutoCancel(true)
-                .setTimeoutAfter(60_000)
-                .build()
-            nm.notify(NOTIF_WAKE, n)
-        } catch (t: Throwable) { Log.w(TAG, "notify", t) }
-    }
+    private fun showWakeNotification() = showFullScreenWake(applicationContext)
 
     /** Ghi lại vì sao lần đánh thức vừa rồi thành/bại — hiện trong app để debug từ xa. */
     private fun saveWakeDiag(launched: Boolean, pm: PowerManager) {
