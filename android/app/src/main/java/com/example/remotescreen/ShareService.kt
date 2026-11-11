@@ -23,7 +23,11 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.Display
+import android.graphics.PixelFormat
 import android.util.Log
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -122,6 +126,7 @@ class ShareService : Service() {
     private val mainH = Handler(Looper.getMainLooper())
     private var cpuLock: PowerManager.WakeLock? = null
     private var screenLock: PowerManager.WakeLock? = null
+    private var keepView: View? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var netCallback: ConnectivityManager.NetworkCallback? = null
     @Volatile private var haveNet = false
@@ -151,9 +156,15 @@ class ShareService : Service() {
         ensureScreenOn()
         try {
             val inter = (getSystemService(POWER_SERVICE) as android.os.PowerManager).isInteractive
-            FcmPush.reportDiag(this, "chia sẻ đã bật · màn hình=" + (if (inter) "bật" else "tắt"))
+            val ov = android.provider.Settings.canDrawOverlays(this)
+            FcmPush.reportDiag(
+                this,
+                "chia sẻ đã bật · màn hình=" + (if (inter) "bật" else "tắt") +
+                    " · overlay=" + (if (ov) "OK" else "THIẾU") + " · giữ sáng=" + (if (keepView != null) "OK" else "không")
+            )
         } catch (_: Throwable) {}
         acquireLocks()
+        addKeepAliveOverlay()
 
         thread(name = "init") {
             try {
@@ -216,13 +227,42 @@ class ShareService : Service() {
     // ---------------------------------------------------------------- stay alive
 
     @Suppress("DEPRECATION")
+    /**
+     * Cách duy nhất được Android hiện đại bảo đảm: một cửa sổ overlay 1x1 có FLAG_KEEP_SCREEN_ON.
+     * Wake lock SCREEN_* đã deprecated và bị nhiều ROM phớt lờ → màn hình tắt, capture ra khung đen.
+     */
+    private fun addKeepAliveOverlay() {
+        try {
+            if (!android.provider.Settings.canDrawOverlays(this)) { Log.w(TAG, "keepalive: thieu quyen overlay"); return }
+            if (keepView != null) return
+            val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+            val v = View(this)
+            val lp = WindowManager.LayoutParams(
+                1, 1,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+                PixelFormat.TRANSLUCENT
+            ).apply { gravity = Gravity.TOP or Gravity.START; x = 0; y = 0 }
+            wm.addView(v, lp)
+            keepView = v
+        } catch (t: Throwable) { Log.w(TAG, "keepalive", t) }
+    }
+
+    private fun removeKeepAliveOverlay() {
+        try { keepView?.let { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(it) } } catch (_: Throwable) {}
+        keepView = null
+    }
+
     private fun acquireLocks() {
         try {
             val pm = getSystemService(POWER_SERVICE) as PowerManager
             cpuLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "remotescreen:cpu").apply { setReferenceCounted(false); acquire() }
             // The screen must stay on, otherwise capture goes black and most games pause. Dim to save battery.
             if (getSharedPreferences("game", MODE_PRIVATE).getBoolean("keepScreen", true)) {
-                screenLock = pm.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK or PowerManager.ON_AFTER_RELEASE, "remotescreen:screen")
+                // SCREEN_DIM bị nhiều ROM bỏ qua (màn hình vẫn tắt → khung hình đen, đo thật: 0 fps).
+                screenLock = pm.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP, "remotescreen:screen")
                     .apply { setReferenceCounted(false); acquire() }
             }
             val wm = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
@@ -245,6 +285,7 @@ class ShareService : Service() {
     }
 
     private fun releaseLocks() {
+        removeKeepAliveOverlay()
         try { cpuLock?.release() } catch (_: Throwable) {}
         try { screenLock?.release() } catch (_: Throwable) {}
         try { wifiLock?.release() } catch (_: Throwable) {}
