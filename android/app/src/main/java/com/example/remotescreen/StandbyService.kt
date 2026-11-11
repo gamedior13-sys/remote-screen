@@ -100,12 +100,17 @@ class StandbyService : Service() {
     private fun scheduleWatchdog() {
         try {
             val am = getSystemService(ALARM_SERVICE) as AlarmManager
-            val pi = PendingIntent.getService(
+            val op = PendingIntent.getService(
                 this, 12, Intent(this, StandbyService::class.java).setAction(ACTION_WATCHDOG),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
+            val show = PendingIntent.getActivity(
+                this, 0, Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
             val ms = watchdogMin().toLong() * 60_000L
-            am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, System.currentTimeMillis() + ms, pi)
+            // setAlarmClock: loại báo thức được MIỄN khởi động service nền trên Android 12+.
+            am.setAlarmClock(AlarmManager.AlarmClockInfo(System.currentTimeMillis() + ms, show), op)
         } catch (t: Throwable) { Log.w(TAG, "watchdog", t) }
     }
 
@@ -120,14 +125,19 @@ class StandbyService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // Vuốt tắt app khỏi đa nhiệm: hẹn 2 giây sau tự chạy lại chế độ chờ.
+        // Vuốt tắt app khỏi đa nhiệm: hẹn 2 giây sau tự chạy lại chế độ chờ (setAlarmClock
+        // là loại báo thức được phép mở service nền trên Android 12+).
         try {
             val am = getSystemService(ALARM_SERVICE) as AlarmManager
-            val pi = PendingIntent.getService(
+            val op = PendingIntent.getService(
                 this, 11, Intent(this, StandbyService::class.java),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
-            am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, System.currentTimeMillis() + 2000, pi)
+            val show = PendingIntent.getActivity(
+                this, 0, Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            am.setAlarmClock(AlarmManager.AlarmClockInfo(System.currentTimeMillis() + 2000, show), op)
         } catch (t: Throwable) { Log.w(TAG, "taskRemoved", t) }
         super.onTaskRemoved(rootIntent)
     }
