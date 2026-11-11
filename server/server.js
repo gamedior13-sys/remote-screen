@@ -270,6 +270,7 @@ app.get('/fcmcheck', (_req, res) => {
   const ids = Object.keys(presence);
   res.set('Cache-Control', 'no-store').json({
     configured: !!fcmCreds,
+    db: dbStatus,
     registered: ids.length,
     withToken: ids.filter((k) => presence[k] && presence[k].fcm).length,
     // Chẩn đoán mới nhất do điện thoại gửi lên (không kèm ID/mật khẩu) — để debug wake từ xa.
@@ -331,7 +332,26 @@ const fails = new Map();
 const presenceFile = path.join(__dirname, 'presence.json');
 let presence = {};
 try { presence = JSON.parse(fs.readFileSync(presenceFile, 'utf8')); } catch {}
-const savePresence = () => { try { fs.writeFileSync(presenceFile, JSON.stringify(presence)); } catch (e) { console.warn('presence save', e.message); } };
+let dbSaveTimer = null;
+let dbStatus = 'off';          // off | ok | error — hiện ở /fcmcheck
+const savePresence = () => {
+  try { fs.writeFileSync(presenceFile, JSON.stringify(presence)); } catch (e) { console.warn('presence save', e.message); }
+  if (dbSaveTimer) return;
+  dbSaveTimer = setTimeout(async () => {
+    dbSaveTimer = null;
+    dbStatus = (await dbPut('presence', presence)) ? 'ok' : 'error';
+  }, 800);
+};
+
+// Sau mỗi lần Render deploy ổ đĩa bị xoá: nạp lại presence (mật khẩu đã hash + token FCM) từ RTDB.
+setTimeout(async () => {
+  const remote = await dbGet('presence');
+  if (remote && typeof remote === 'object' && Object.keys(remote).length) {
+    presence = { ...remote, ...presence };
+    dbStatus = 'ok';
+    console.log('rtdb: nap lai', Object.keys(remote).length, 'thiet bi');
+  }
+}, 2500);
 
 // ---- Firebase Cloud Messaging (wake a phone whose standby socket is dead) ----
 let fcmCreds = null;
@@ -359,6 +379,54 @@ async function fcmAccessToken() {
   return j.access_token;
 }
 
+// ---- Realtime Database: presence phải sống qua mỗi lần Render deploy (ổ đĩa free là tạm) ----
+const DB_URL = (process.env.FIREBASE_DB_URL || 'https://remote-screen-209c3-default-rtdb.asia-southeast1.firebasedatabase.app').trim().replace(/\/$/, '');
+const DB_SCOPE = 'https://www.googleapis.com/auth/firebase.database';
+let dbAuth = { token: null, until: 0 };
+
+async function dbToken() {
+  if (!fcmCreds) return null;
+  if (dbAuth.token && Date.now() < dbAuth.until) return dbAuth.token;
+  const now = Math.floor(Date.now() / 1000);
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const head = b64({ alg: 'RS256', typ: 'JWT' });
+  const claim = b64({ iss: fcmCreds.client_email, scope: DB_SCOPE, aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 });
+  const signer = crypto.createSign('RSA-SHA256');
+  signer.update(head + '.' + claim);
+  const sig = signer.sign(String(fcmCreds.private_key).replace(/\\n/g, '\n')).toString('base64url');
+  const r = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'grant_type=' + encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') + '&assertion=' + encodeURIComponent(head + '.' + claim + '.' + sig),
+  });
+  if (!r.ok) { console.warn('rtdb auth', r.status, (await r.text()).slice(0, 160)); return null; }
+  const j = await r.json();
+  dbAuth = { token: j.access_token, until: Date.now() + 45 * 60e3 };
+  return j.access_token;
+}
+
+async function dbGet(path) {
+  try {
+    const t = await dbToken(); if (!t) return null;
+    const r = await fetch(`${DB_URL}/${path}.json`, { headers: { Authorization: 'Bearer ' + t } });
+    if (!r.ok) { console.warn('rtdb get', path, r.status); return null; }
+    return await r.json();
+  } catch (e) { console.warn('rtdb get', path, e.message); return null; }
+}
+
+async function dbPut(path, value) {
+  try {
+    const t = await dbToken(); if (!t) return false;
+    const r = await fetch(`${DB_URL}/${path}.json`, {
+      method: 'PUT',
+      headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
+      body: JSON.stringify(value),
+    });
+    if (!r.ok) { console.warn('rtdb put', path, r.status, (await r.text()).slice(0, 160)); return false; }
+    return true;
+  } catch (e) { console.warn('rtdb put', path, e.message); return false; }
+}
+
 async function fcmWake(id, token) {
   try {
     if (!fcmCreds || !token) return false;
@@ -375,8 +443,14 @@ async function fcmWake(id, token) {
   } catch (t) { console.warn('fcm wake', id, t.message); return false; }
 }
 
-const sha = (s) => crypto.createHash('sha256').update(String(s)).digest();
-const safeEqual = (a, b) => crypto.timingSafeEqual(a, b);
+// Hash lưu dạng hex (không phải Buffer) để JSON/RTDB đọc lại vẫn dùng được sau khi restart.
+const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
+const safeEqual = (a, b) => {
+  try {
+    if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
+  } catch { return false; }
+};
 const send = (ws, obj) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); };
 
 function clientIp(req) {
