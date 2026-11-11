@@ -271,6 +271,7 @@ app.get('/fcmcheck', (_req, res) => {
   res.set('Cache-Control', 'no-store').json({
     configured: !!fcmCreds,
     db: dbStatus,
+    dbError: dbError.slice(0, 200),
     registered: ids.length,
     withToken: ids.filter((k) => presence[k] && presence[k].fcm).length,
     // Chẩn đoán mới nhất do điện thoại gửi lên (không kèm ID/mật khẩu) — để debug wake từ xa.
@@ -350,6 +351,8 @@ setTimeout(async () => {
     presence = { ...remote, ...presence };
     dbStatus = 'ok';
     console.log('rtdb: nap lai', Object.keys(remote).length, 'thiet bi');
+  } else {
+    dbStatus = dbError ? 'error' : 'empty';
   }
 }, 2500);
 
@@ -383,6 +386,7 @@ async function fcmAccessToken() {
 const DB_URL = (process.env.FIREBASE_DB_URL || 'https://remote-screen-209c3-default-rtdb.asia-southeast1.firebasedatabase.app').trim().replace(/\/$/, '');
 const DB_SCOPE = 'https://www.googleapis.com/auth/firebase.database';
 let dbAuth = { token: null, until: 0 };
+let dbError = '';
 
 async function dbToken() {
   if (!fcmCreds) return null;
@@ -399,7 +403,7 @@ async function dbToken() {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: 'grant_type=' + encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') + '&assertion=' + encodeURIComponent(head + '.' + claim + '.' + sig),
   });
-  if (!r.ok) { console.warn('rtdb auth', r.status, (await r.text()).slice(0, 160)); return null; }
+  if (!r.ok) { dbError = 'auth ' + r.status + ' ' + (await r.text()).slice(0, 120); console.warn('rtdb auth', dbError); return null; }
   const j = await r.json();
   dbAuth = { token: j.access_token, until: Date.now() + 45 * 60e3 };
   return j.access_token;
@@ -409,7 +413,7 @@ async function dbGet(path) {
   try {
     const t = await dbToken(); if (!t) return null;
     const r = await fetch(`${DB_URL}/${path}.json`, { headers: { Authorization: 'Bearer ' + t } });
-    if (!r.ok) { console.warn('rtdb get', path, r.status); return null; }
+    if (!r.ok) { dbError = 'get ' + path + ' ' + r.status; console.warn('rtdb get', path, r.status); return null; }
     return await r.json();
   } catch (e) { console.warn('rtdb get', path, e.message); return null; }
 }
@@ -422,7 +426,7 @@ async function dbPut(path, value) {
       headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
       body: JSON.stringify(value),
     });
-    if (!r.ok) { console.warn('rtdb put', path, r.status, (await r.text()).slice(0, 160)); return false; }
+    if (!r.ok) { dbError = 'put ' + path + ' ' + r.status + ' ' + (await r.text()).slice(0, 120); console.warn('rtdb put', path, dbError); return false; }
     return true;
   } catch (e) { console.warn('rtdb put', path, e.message); return false; }
 }
