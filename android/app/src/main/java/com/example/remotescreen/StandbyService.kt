@@ -232,8 +232,11 @@ class StandbyService : Service() {
                     if (JSONObject(text).optString("type") == "wake") doWake()
                 } catch (t: Throwable) { Log.w(TAG, "msg", t) }
             }
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { if (webSocket === ws) retryLater() }
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { if (webSocket === ws) retryLater() }
+            // Cờ riêng cho từng socket: tránh cảnh onFailure chạy trước khi ws được gán xong
+            // (mất mạng thì OkHttp báo lỗi rất nhanh) làm mất luôn lần nối lại.
+            private val done = java.util.concurrent.atomic.AtomicBoolean(false)
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { if (!stopping && done.compareAndSet(false, true)) retryLater() }
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { if (!stopping && done.compareAndSet(false, true)) retryLater() }
         })
     }
 

@@ -577,18 +577,25 @@ class ShareService : Service() {
                 try { handleSignaling(JSONObject(text)) } catch (t: Throwable) { Log.e(TAG, "signal", t) }
             }
 
+            // Mỗi socket có cờ riêng. Trước đây code so `webSocket !== ws`: khi mất mạng, OkHttp
+            // gọi onFailure rất nhanh — có lúc trước cả dòng gán ws = newWebSocket(...) — nên guard
+            // này chặn luôn lần nối lại, service sống nhưng không bao giờ đăng ký lại.
+            private val done = java.util.concurrent.atomic.AtomicBoolean(false)
+
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                if (webSocket !== ws || stopping) return          // callback của socket đã bị thay
+                if (stopping || !done.compareAndSet(false, true)) return
+                drops++
                 Log.w(TAG, "ws failure", t)
                 FcmPush.reportDiag(applicationContext, "signaling rớt sau ${sinceOpen()}s: ${t.javaClass.simpleName} ${t.message ?: ""}".take(280))
-                ws = null                       // onClosed của cùng socket sẽ bị bỏ qua, backoff không nhân đôi
+                ws = null
                 state = STATE_CONNECTING
                 closePeer()
                 retryLater()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                if (webSocket !== ws || stopping) return
+                if (stopping || !done.compareAndSet(false, true)) return
+                drops++
                 FcmPush.reportDiag(applicationContext, "signaling đóng sau ${sinceOpen()}s: $code $reason".take(280))
                 ws = null
                 state = STATE_CONNECTING
@@ -605,6 +612,7 @@ class ShareService : Service() {
     // onClosed cùng hẹn 3 s: hai socket đăng ký một ID, server đá lẫn nhau, phiên chết theo chu kỳ.
     private var retryGen = 0
     private var backoffMs = 1000L
+    private var drops = 0
 
     private fun retryLater() {
         if (stopping) return
@@ -623,7 +631,12 @@ class ShareService : Service() {
 
     private fun handleSignaling(m: JSONObject) {
         when (m.getString("type")) {
-            "registered" -> { Log.i(TAG, "registered as ${m.getString("id")}"); state = STATE_READY; backoffMs = 1000L }
+            "registered" -> {
+                Log.i(TAG, "registered as ${m.getString("id")}")
+                state = STATE_READY
+                backoffMs = 1000L
+                if (drops > 0) FcmPush.reportDiag(applicationContext, "signaling nối lại OK sau $drops lần rớt")
+            }
             "error" -> Log.w(TAG, "server error: ${m.optString("message")}")
             "peer-joined" -> { state = STATE_CONTROLLED; startPeer(m.optJSONArray("ice")) }
             "peer-left" -> { state = STATE_READY; closePeer() }
