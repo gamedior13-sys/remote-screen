@@ -232,8 +232,8 @@ class StandbyService : Service() {
                     if (JSONObject(text).optString("type") == "wake") doWake()
                 } catch (t: Throwable) { Log.w(TAG, "msg", t) }
             }
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { retryLater() }
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { retryLater() }
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { if (webSocket === ws) retryLater() }
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { if (webSocket === ws) retryLater() }
         })
     }
 

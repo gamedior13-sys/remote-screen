@@ -553,9 +553,16 @@ class ShareService : Service() {
 
     private fun connectSignaling() {
         if (stopping) return
+        retryGen++          // huỷ mọi lần chờ cũ: luôn chỉ một socket signaling sống
         ws = http.newWebSocket(Request.Builder().url(wsUrl()).build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                webSocket.send(JSONObject().put("type", "register").put("id", deviceId).put("password", password).toString())
+                wsOpenedAt = System.currentTimeMillis()
+                // Token FCM đi cùng register: sau mỗi lần Render deploy, presence.json bị xoá,
+                // nên chỉ gửi token một lần qua POST /fcm lúc mở app là không đủ.
+                val reg = JSONObject().put("type", "register").put("id", deviceId).put("password", password)
+                val fcm = getSharedPreferences("cfg", MODE_PRIVATE).getString("fcm", "").orEmpty()
+                if (fcm.isNotEmpty()) reg.put("fcm", fcm)
+                webSocket.send(reg.toString())
                 // App-level keep-alive: free cloud hosts stay awake only while they receive messages.
                 thread(name = "keepalive") {
                     while (!stopping) {
@@ -571,13 +578,19 @@ class ShareService : Service() {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (webSocket !== ws || stopping) return          // callback của socket đã bị thay
                 Log.w(TAG, "ws failure", t)
+                FcmPush.reportDiag(applicationContext, "signaling rớt sau ${sinceOpen()}s: ${t.javaClass.simpleName} ${t.message ?: ""}".take(280))
+                ws = null                       // onClosed của cùng socket sẽ bị bỏ qua, backoff không nhân đôi
                 state = STATE_CONNECTING
                 closePeer()
                 retryLater()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (webSocket !== ws || stopping) return
+                FcmPush.reportDiag(applicationContext, "signaling đóng sau ${sinceOpen()}s: $code $reason".take(280))
+                ws = null
                 state = STATE_CONNECTING
                 closePeer()
                 retryLater()
@@ -585,11 +598,22 @@ class ShareService : Service() {
         })
     }
 
+    @Volatile private var wsOpenedAt = 0L
+    private fun sinceOpen(): Long = if (wsOpenedAt == 0L) 0 else (System.currentTimeMillis() - wsOpenedAt) / 1000
+
+    // Một lần chờ duy nhất, backoff 1 → 15 s, reset khi đăng ký xong. Trước đây onFailure và
+    // onClosed cùng hẹn 3 s: hai socket đăng ký một ID, server đá lẫn nhau, phiên chết theo chu kỳ.
+    private var retryGen = 0
+    private var backoffMs = 1000L
+
     private fun retryLater() {
         if (stopping) return
+        val gen = ++retryGen
+        val wait = backoffMs
+        backoffMs = (backoffMs * 2).coerceAtMost(15_000L)
         thread(name = "retry") {
-            Thread.sleep(3000)
-            if (!stopping) connectSignaling()
+            try { Thread.sleep(wait) } catch (_: InterruptedException) { return@thread }
+            if (!stopping && gen == retryGen) connectSignaling()
         }
     }
 
@@ -599,7 +623,7 @@ class ShareService : Service() {
 
     private fun handleSignaling(m: JSONObject) {
         when (m.getString("type")) {
-            "registered" -> { Log.i(TAG, "registered as ${m.getString("id")}"); state = STATE_READY }
+            "registered" -> { Log.i(TAG, "registered as ${m.getString("id")}"); state = STATE_READY; backoffMs = 1000L }
             "error" -> Log.w(TAG, "server error: ${m.optString("message")}")
             "peer-joined" -> { state = STATE_CONTROLLED; startPeer(m.optJSONArray("ice")) }
             "peer-left" -> { state = STATE_READY; closePeer() }

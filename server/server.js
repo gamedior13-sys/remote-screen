@@ -148,6 +148,9 @@ async function iceServersFor(req) {
 
 const MAX_FAILS = 8;               // wrong-password attempts allowed ...
 const FAIL_WINDOW_MS = 10 * 60e3;  // ... per IP within this window
+// A device that dies mid-session keeps its id for this long: the controller waits for it to come
+// back instead of being dropped and re-woken (which re-opens the app on the phone).
+const DEV_GRACE_MS = 30_000;
 
 const app = express();
 app.disable('x-powered-by');
@@ -544,6 +547,8 @@ wss.on('connection', (ws, req) => {
       let id = /^\d{9}$/.test(String(m.id || '')) ? String(m.id) : null;
       const pwHash = sha(password);
       const existing = id && devices.get(id);
+      let keepController = null;
+      let keptTurn = null;
       if (existing) {
         // Allow a reconnecting device to take over its own ID only with the same password.
         if (!safeEqual(existing.pwHash, pwHash)) {
@@ -552,17 +557,23 @@ wss.on('connection', (ws, req) => {
           // Đang chia sẻ thật: socket chờ (standby) không được cướp ID, nếu không controller
           // sẽ luôn nhận 'waking' và máy bật/tắt chia sẻ liên tục.
           return send(ws, { type: 'error', code: 'sharing', message: 'Device is sharing' });
+        } else if (!existing.standby && m.standby && !existing.ws) {
+          // Máy chết khi đang chia sẻ rồi quay lại ở chế độ chờ: phiên cũ kết thúc thật.
+          send(existing.controller, { type: 'peer-left' });
         } else {
-          existing.ws.role = null;
-          try { existing.ws.terminate(); } catch {}
+          // Giữ controller qua một lần rớt socket ngắn: nó nhận 'connected' lần nữa rồi hai bên
+          // thoả thuận lại WebRTC, thay vì bị đẩy về 'waking' và đánh thức máy thêm lần nữa.
+          keepController = existing.controller || null;
+          keptTurn = existing.turn || null;
+          if (existing.ws) { existing.ws.role = null; try { existing.ws.terminate(); } catch {} }
         }
       }
       if (!id) id = newId();
+      // Controller cũ chỉ được giữ khi socket còn sống: nếu nó đã chết thì để máy chờ controller mới.
+      if (keepController && keepController.readyState !== 1) keepController = null;
       ws.role = 'device';
       ws.deviceId = id;
-      // Giữ controller cũ khi máy đăng ký lại cùng mật khẩu, để nối lại mượt sau khi rớt mạng.
-      const keepController = (existing && existing.ws && existing.controller) || null;
-      devices.set(id, { ws, pwHash, controller: keepController, standby: !!m.standby, lastWake: 0 });
+      devices.set(id, { ws, pwHash, controller: keepController, standby: !!m.standby, lastWake: 0, turn: keptTurn });
       // Nhớ hash mật khẩu + token FCM xuống đĩa: còn gọi dậy khi socket chết.
       // Giữ nguyên trường cũ (diag/diagTs): trước đây ghi đè cả bản ghi nên chẩn đoán vừa gửi bị xoá.
       presence[id] = {
@@ -574,7 +585,14 @@ wss.on('connection', (ws, req) => {
         ...(m.standby ? {} : { lastSharing: Date.now() }),
       };
       savePresence();
-      return send(ws, { type: 'registered', id });
+      send(ws, { type: 'registered', id });
+      if (keepController) {
+        // Máy nối lại trong 30 s: dựng lại phiên ngay, không cần controller hỏi lại server.
+        send(keepController, { type: 'connected' });
+        pickedIce(keptTurn).catch(() => null)
+          .then((ice) => send(ws, ice ? { type: 'peer-joined', ice } : { type: 'peer-joined' }));
+      }
+      return;
     }
 
     // ---- controller connects ----
@@ -587,12 +605,24 @@ wss.on('connection', (ws, req) => {
         // mật khẩu khớp với hash đã lưu, và không bao giờ tiết lộ ID nào tồn tại.
         const pr = presence[idc];
         if (pr && pr.fcm && safeEqual(pr.pwHash, sha(m.password || ''))) {
-          fcmWake(idc, pr.fcm);
+          // Tối đa một cú đẩy mỗi 25 s: controller thử lại mỗi 2,5 s, đẩy theo từng lần thử sẽ
+          // thành bão push và app Android mở lặp.
+          const nowW = Date.now();
+          if (!pr.wakeAt || nowW - pr.wakeAt > 25_000) {
+            pr.wakeAt = nowW;
+            savePresence();
+            fcmWake(idc, pr.fcm);
+          }
           return send(ws, { type: 'error', code: 'waking', message: 'Waking device' });
         }
         // No lock-out any more; a short pause per wrong attempt still makes guessing impractical.
         // Same message for unknown id and wrong password: do not leak which IDs exist.
         return setTimeout(() => send(ws, { type: 'error', code: 'denied', message: 'Wrong ID or password' }), 1000);
+      }
+      if (!dev.ws) {
+        // Máy vừa rớt socket khi đang chia sẻ: giữ ID thêm DEV_GRACE_MS. Trả 'waking' để client
+        // tự thử lại (cả tab mới lẫn tab đang mở đều hiểu mã này), KHÔNG đẩy FCM.
+        return send(ws, { type: 'error', code: 'waking', message: 'Device is reconnecting' });
       }
       if (dev.standby) {
         // Máy đang ở chế độ chờ, chưa chia sẻ: đánh thức nó, bảo controller chờ rồi thử lại.
@@ -618,6 +648,7 @@ wss.on('connection', (ws, req) => {
       ws.role = 'controller';
       ws.deviceId = idc;
       dev.controller = ws;
+      dev.turn = typeof m.turn === 'string' ? m.turn : null;
       send(ws, { type: 'connected' });
       return pickedIce(m.turn).catch(() => null)
         .then((ice) => send(dev.ws, ice ? { type: 'peer-joined', ice } : { type: 'peer-joined' }));
@@ -632,12 +663,20 @@ wss.on('connection', (ws, req) => {
     }
   });
 
-  ws.on('close', () => {
+  ws.on('close', (code) => {
     if (ws.role === 'device') {
       const dev = devices.get(ws.deviceId);
       if (dev && dev.ws === ws) {
-        send(dev.controller, { type: 'peer-left' });
-        devices.delete(ws.deviceId);
+        if (dev.controller && code !== 1000) {
+          // Rớt mạng / tiến trình bị giết: giữ ID thêm DEV_GRACE_MS. Controller nhận 'waking'
+          // (không phải FCM) và tự thử lại, nên không có vòng mở app lặp.
+          dev.ws = null;
+          dev.graceUntil = Date.now() + DEV_GRACE_MS;
+        } else {
+          // Máy dừng chia sẻ chủ động (close 1000) hoặc không còn ai xem: kết thúc ngay.
+          send(dev.controller, { type: 'peer-left' });
+          devices.delete(ws.deviceId);
+        }
       }
     } else if (ws.role === 'controller') {
       const dev = devices.get(ws.deviceId);
@@ -657,6 +696,17 @@ setInterval(() => {
     ws.ping();
   });
 }, 25000);
+
+// Phiên đang mở mà máy không quay lại trong DEV_GRACE_MS: kết thúc hẳn để controller biết.
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, dev] of devices) {
+    if (!dev.ws && dev.graceUntil && now > dev.graceUntil) {
+      send(dev.controller, { type: 'peer-left' });
+      devices.delete(id);
+    }
+  }
+}, 5000).unref();
 
 server.listen(PORT, () => console.log(`Remote Screen server on :${PORT}  (web client at /), ${LOCAL_TURN ? 'built-in TURN on udp :' + TURN_PORT : HOSTED_TURN ? 'hosted TURN' : 'no TURN'}`));
 
