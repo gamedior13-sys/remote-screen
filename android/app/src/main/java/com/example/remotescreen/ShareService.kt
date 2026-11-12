@@ -130,7 +130,6 @@ class ShareService : Service() {
     private var keepError = ""
     private var wifiLock: WifiManager.WifiLock? = null
     private var netCallback: ConnectivityManager.NetworkCallback? = null
-    @Volatile private var haveNet = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -302,11 +301,10 @@ class ShareService : Service() {
             val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
             netCallback = object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    // Mạng vừa có lại / đổi Wi-Fi <-> 4G: socket cũ có thể đã chết âm thầm (state vẫn tưởng đang nối).
-                    // Luôn đóng socket hiện tại để đăng ký lại ngay trên mạng mới, trừ lần mạng đầu tiên.
-                    if (stopping) return
-                    if (haveNet) { try { ws?.cancel() } catch (_: Throwable) {} }
-                    haveNet = true
+                    // Mạng vừa có lại / đổi Wi-Fi <-> 4G: socket cũ có thể đã chết âm thầm. Bỏ qua
+                    // backoff (1→15 s) và đăng ký lại NGAY, nếu không web phải đứng "chờ hình ảnh" rất lâu.
+                    if (stopping || !everConnected) return
+                    reconnectNow("mạng có lại")
                 }
                 override fun onLost(network: Network) { /* chờ onAvailable của mạng kế tiếp */ }
             }.also { cm.registerDefaultNetworkCallback(it) }
@@ -551,11 +549,19 @@ class ShareService : Service() {
 
     // ---------------------------------------------------------------- signaling
 
+    @Synchronized
     private fun connectSignaling() {
         if (stopping) return
         retryGen++          // huỷ mọi lần chờ cũ: luôn chỉ một socket signaling sống
+        // Số thế hệ của socket này. Socket bị reconnectNow thay thế sẽ thấy gen != socketGen nên
+        // KHÔNG được xoá `ws` mới và không được hẹn nối lại lần nữa — trước đây nó làm cả hai nên
+        // hai socket tranh nhau một ID, server đá lẫn nhau và phiên chết theo chu kỳ.
+        val gen = ++socketGen
         ws = http.newWebSocket(Request.Builder().url(wsUrl()).build(), object : WebSocketListener() {
+            private fun isCurrent() = gen == socketGen
+
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (!isCurrent()) { try { webSocket.cancel() } catch (_: Throwable) {}; return }
                 wsOpenedAt = System.currentTimeMillis()
                 // Token FCM đi cùng register: sau mỗi lần Render deploy, presence.json bị xoá,
                 // nên chỉ gửi token một lần qua POST /fcm lúc mở app là không đủ.
@@ -584,6 +590,8 @@ class ShareService : Service() {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 if (stopping || !done.compareAndSet(false, true)) return
+                // Socket đã bị thay (mạng đổi, reconnectNow): lỗi này là hệ quả, không phải sự cố.
+                if (!isCurrent()) return
                 drops++
                 Log.w(TAG, "ws failure", t)
                 FcmPush.reportDiag(applicationContext, "signaling rớt sau ${sinceOpen()}s: ${t.javaClass.simpleName} ${t.message ?: ""}".take(280))
@@ -595,6 +603,7 @@ class ShareService : Service() {
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 if (stopping || !done.compareAndSet(false, true)) return
+                if (!isCurrent()) return
                 drops++
                 FcmPush.reportDiag(applicationContext, "signaling đóng sau ${sinceOpen()}s: $code $reason".take(280))
                 ws = null
@@ -611,8 +620,27 @@ class ShareService : Service() {
     // Một lần chờ duy nhất, backoff 1 → 15 s, reset khi đăng ký xong. Trước đây onFailure và
     // onClosed cùng hẹn 3 s: hai socket đăng ký một ID, server đá lẫn nhau, phiên chết theo chu kỳ.
     private var retryGen = 0
+    @Volatile private var socketGen = 0
     private var backoffMs = 1000L
     private var drops = 0
+    private var lastReconnectAt = 0L
+    @Volatile private var everConnected = false
+
+    /** Mạng vừa trở lại: đóng socket cũ và nối lại ngay, không chờ hết backoff. */
+    @Synchronized private fun reconnectNow(reason: String) {
+        if (stopping) return
+        val now = System.currentTimeMillis()
+        // Wi-Fi nhấp nháy làm onAvailable bắn liên tục: tối đa một lần nối lại mỗi 2 s.
+        if (now - lastReconnectAt < 2_000L) return
+        lastReconnectAt = now
+        backoffMs = 1000L
+        retryGen++                                   // huỷ lần chờ đang treo
+        val old = ws
+        ws = null
+        try { old?.cancel() } catch (_: Throwable) {}
+        FcmPush.reportDiag(applicationContext, "$reason — nối lại ngay".take(280))
+        connectSignaling()
+    }
 
     private fun retryLater() {
         if (stopping) return
@@ -635,6 +663,7 @@ class ShareService : Service() {
                 Log.i(TAG, "registered as ${m.getString("id")}")
                 state = STATE_READY
                 backoffMs = 1000L
+                everConnected = true
                 if (drops > 0) FcmPush.reportDiag(applicationContext, "signaling nối lại OK sau $drops lần rớt")
             }
             "error" -> Log.w(TAG, "server error: ${m.optString("message")}")
