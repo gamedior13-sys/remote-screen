@@ -625,10 +625,19 @@ wss.on('connection', (ws, req) => {
         return send(ws, { type: 'error', code: 'waking', message: 'Device is reconnecting' });
       }
       if (dev.standby) {
-        // Máy đang ở chế độ chờ, chưa chia sẻ: đánh thức nó, bảo controller chờ rồi thử lại.
         const nowT = Date.now();
-        // Vừa chia sẻ xong / đang nối lại socket (<90 s): KHÔNG đánh thức nữa, chỉ bảo chờ.
-        // Nếu không, mỗi 8-15 giây app lại bị mở lên và phiên không bao giờ ổn định.
+        // Socket chờ còn sống: đánh thức NGAY qua socket, KHÔNG phụ thuộc cooldown 90 s.
+        // Cooldown chỉ có ý nghĩa cho FCM (ngăn bão "mở app lại" khi socket chia sẻ vừa rớt);
+        // đánh thức qua socket không mở app mới — máy chỉ đang đứng chờ sẵn, gọi là chạy.
+        if (dev.ws && dev.ws.readyState === 1) {
+          if (!dev.lastWake || nowT - dev.lastWake > 3_000) {
+            dev.lastWake = nowT;
+            send(dev.ws, { type: 'wake' });
+          }
+          return send(ws, { type: 'error', code: 'waking', message: 'Waking device' });
+        }
+        // Socket chờ đã chết: chỉ còn FCM. Vừa chia sẻ xong (<90 s) hoặc mới đánh thức
+        // (<20 s) thì chưa đẩy, chỉ bảo controller chờ — chống bão mở app như R1.
         const justShared = presence[idc] && presence[idc].lastSharing && nowT - presence[idc].lastSharing < 90_000;
         if (!justShared && (!dev.lastWake || nowT - dev.lastWake > 20_000)) {
           dev.lastWake = nowT;
@@ -676,6 +685,12 @@ wss.on('connection', (ws, req) => {
           // Máy dừng chia sẻ chủ động (close 1000) hoặc không còn ai xem: kết thúc ngay.
           send(dev.controller, { type: 'peer-left' });
           devices.delete(ws.deviceId);
+          // Dừng CHỦ ĐỘNG = phiên đã kết thúc sạch: bỏ cờ lastSharing để lần kết nối
+          // kế tiếp (kể cả trong 90 s) không bị cooldown chặn. Rớt bất thường vẫn giữ cờ.
+          if (presence[ws.deviceId] && presence[ws.deviceId].lastSharing) {
+            delete presence[ws.deviceId].lastSharing;
+            savePresence();
+          }
         }
       }
     } else if (ws.role === 'controller') {
