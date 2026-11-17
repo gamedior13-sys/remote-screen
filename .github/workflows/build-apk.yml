@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: build-apk
+  group: build-apk-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -49,7 +49,10 @@ jobs:
 
       # Publish the APK on the web server so phones can download it directly:
       # https://<server>/remote-screen.apk
+      # Chỉ bản build từ main mới được phát hành: trước đây push một nhánh bất kỳ cũng đẩy APK
+      # của nhánh đó lên main (reset --hard origin/main rồi push), điện thoại tự cập nhật nhầm bản thử.
       - name: Publish APK to server/public
+        if: github.ref == 'refs/heads/main'
         run: |
           # Always publish on top of the newest main (another run may have pushed meanwhile).
           cp android/app/build/outputs/apk/debug/app-debug.apk /tmp/app.apk
