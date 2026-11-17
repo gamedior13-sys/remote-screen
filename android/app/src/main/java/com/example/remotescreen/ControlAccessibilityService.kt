@@ -196,12 +196,16 @@ class ControlAccessibilityService : AccessibilityService() {
         confirmRun++
         confirmUntil = 0L
         scopeStep = 6
+        // Gốc lỗi #2: trước đây chỉ dừng vòng hiện tại, còn mốc autoConfirmUntil vẫn hiệu lực 2–3 phút,
+        // event hệ thống kế tiếp lại khởi động vòng quét mới (scopeStep về 0) và bấm nhầm.
+        Updater.revokeAutoConfirm(this)
     }
     private val confirmWords = listOf(
         "Bắt đầu ngay", "Start now", "Bắt đầu ghi", "Bắt đầu chia sẻ", "Bắt đầu", "Start",
         "Chia sẻ màn hình", "Share screen", "Start sharing", "Chia sẻ", "Share",
         "Cài đặt", "Install", "Cập nhật", "Update", "Tiếp tục", "Continue", "Cho phép", "Allow"
     )
+    private val MAX_OPTION_LEN = 40
     private val dontAskWords = listOf("Không hiển thị lại", "Don't show again", "Do not show again")
     // Nhận diện lựa chọn trong ô xổ "phạm vi" của hộp thoại chia sẻ (Android 14+): dựa theo nội dung chữ,
     // vì mỗi hãng ghi khác nhau ("Toàn màn hình" / "Toàn bộ màn hình" / "Chia sẻ toàn bộ màn hình"...).
@@ -220,7 +224,10 @@ class ControlAccessibilityService : AccessibilityService() {
     private fun isConfirmPkg(pkg: String?): Boolean {
         if (pkg == null) return false
         return pkg.contains("systemui") || pkg.contains("packageinstaller") ||
-               pkg.contains("permissioncontroller") || pkg.contains("settings") || pkg == "android"
+               pkg.contains("permissioncontroller") || pkg.contains("settings") || pkg == "android" ||
+               // Hộp thoại hệ thống của các ROM hãng (MIUI/HyperOS, ColorOS/realme, Vivo, Huawei)
+               pkg.contains("securitycenter") || pkg.startsWith("com.oplus.") || pkg.startsWith("com.coloros.") ||
+               pkg.contains("vivo.permission") || pkg.contains("systemmanager")
     }
 
     private var confirmRun = 0
@@ -283,6 +290,9 @@ class ControlAccessibilityService : AccessibilityService() {
             val hits = try { r.findAccessibilityNodeInfosByText(searchKey) } catch (_: Throwable) { emptyList<AccessibilityNodeInfo>() }
             for (n in hits) {
                 val t = n.text?.toString()?.trim() ?: continue
+                // Chỉ nhãn lựa chọn ngắn. Đoạn mô tả ("Khi bạn chia sẻ toàn bộ màn hình, …") cũng chứa
+                // "toàn … màn hình" và trước đây bị bấm nhầm tới 6 lần, đóng/mở ô chọn liên tục (#3).
+                if (t.length > MAX_OPTION_LEN) continue
                 if (match(t)) clickableTarget(n, 2)?.let { return it }
             }
         }
@@ -292,14 +302,9 @@ class ControlAccessibilityService : AccessibilityService() {
     /** Bấm đúng MỘT bước trong hộp thoại hệ thống; trả về true nếu vừa bấm gì đó. */
     private fun confirmNow(): Boolean {
         if (!Updater.autoConfirmActive(this)) return false
-        // Ưu tiên cửa sổ của hệ thống; nếu máy hãng dùng package riêng (MIUI/ColorOS/Funtouch…) thì
-        // vẫn nhận mọi cửa sổ KHÔNG phải app mình — hộp thoại chia sẻ luôn là cửa sổ ngoài.
-        val all = allRoots()
-        val mine = packageName
-        val roots = all.filter { r ->
-            val p = r.packageName?.toString()
-            isConfirmPkg(p) || (p != null && p != mine && !p.contains("launcher"))
-        }
+        // CHỈ cửa sổ hệ thống (systemui / trình cài đặt / quyền). Trước đây mọi cửa sổ không phải app
+        // mình đều bị quét, nên app đang mở (game, trình duyệt…) bị bấm "Cho phép/Share/Start…" (#2).
+        val roots = allRoots().filter { r -> isConfirmPkg(r.packageName?.toString()) }
         if (roots.isEmpty()) return false
         for (r in roots) for (w in dontAskWords) for (n in r.findAccessibilityNodeInfosByText(w)) {
             if (n.isCheckable && !n.isChecked) { n.performAction(AccessibilityNodeInfo.ACTION_CLICK); return true }

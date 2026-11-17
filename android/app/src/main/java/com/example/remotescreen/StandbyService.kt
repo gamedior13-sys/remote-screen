@@ -34,6 +34,8 @@ class StandbyService : Service() {
     companion object {
         const val ACTION_STOP = "com.example.remotescreen.STANDBY_STOP"
         const val ACTION_WATCHDOG = "com.example.remotescreen.STANDBY_WATCHDOG"
+        /** ShareService đã chạy: đóng socket chờ nhưng GIỮ cài đặt tự đánh thức (khác ACTION_STOP). */
+        const val ACTION_YIELD = "com.example.remotescreen.STANDBY_YIELD"
         private const val TAG = "StandbyService"
         private const val CHANNEL = "standby"
         private const val CHANNEL_WAKE = "wake"
@@ -119,6 +121,10 @@ class StandbyService : Service() {
             // không đứng máy lên lại cho tới khi chủ máy bật lại trong app (T5b).
             prefs().edit().putBoolean("autoShare", false).apply()
             shutdown(); return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_YIELD) {
+            if (running) shutdown() else stopSelf()
+            return START_NOT_STICKY
         }
         val fromWatchdog = intent?.action == ACTION_WATCHDOG
         if (running) {

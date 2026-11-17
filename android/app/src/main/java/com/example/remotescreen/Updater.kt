@@ -51,6 +51,9 @@ object Updater {
     fun allowAutoConfirm(ctx: Context, ms: Long = 4 * 60_000L) =
         prefs(ctx).edit().putLong("autoConfirmUntil", System.currentTimeMillis() + ms).apply()
 
+    /** Thu hồi ngay cửa sổ tự bấm (chia sẻ đã chạy): không để vòng quét sống thêm 2–3 phút. */
+    fun revokeAutoConfirm(ctx: Context) = prefs(ctx).edit().remove("autoConfirmUntil").apply()
+
     fun autoConfirmActive(ctx: Context) = prefs(ctx).getLong("autoConfirmUntil", 0) > System.currentTimeMillis()
 
     /**

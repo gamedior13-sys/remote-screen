@@ -384,7 +384,18 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        maybeReshare()
         maybeAutostart()
+    }
+
+    /** Chủ máy vừa chạm thông báo "Bấm để chia sẻ lại": mở ngay hộp thoại xin quyền (người đang cầm máy). */
+    private fun maybeReshare() {
+        if (intent?.getBooleanExtra(ShareService.EXTRA_RESHARE, false) != true) return
+        intent?.removeExtra(ShareService.EXTRA_RESHARE)
+        ShareService.cancelReshareNotification(this)
+        if (ShareService.running || capturePending) return
+        if (passwordEdit.text.length < 6) return
+        statusText.postDelayed({ if (!ShareService.running) onToggle() }, 300)
     }
 
     /** After a self-update: start sharing again by itself (the accessibility service confirms the dialog). */
@@ -450,6 +461,7 @@ class MainActivity : ComponentActivity() {
                     " · overlay=" + (if (canOverlay()) "OK" else "THIẾU")
             )
         }
+        maybeReshare()
         maybeAutostart()
         statusText.removeCallbacks(ticker)
         ticker.run()
