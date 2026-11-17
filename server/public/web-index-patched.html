@@ -1611,8 +1611,8 @@
     const lim = { cpu: 'CPU máy Android mã hoá không kịp', bandwidth: 'mạng không đủ băng thông', other: 'giới hạn khác' }[m.limit] || '';
     let tip = '';
     if (cap && cap < want * 0.6) tip = 'Giả lập chỉ xuất ' + cap + ' fps: mở LDPlayer → Cài đặt → Nâng cao → FPS = 60 (và bật khung hình cao trong game). Màn hình đứng yên thì fps thấp là bình thường.';
-    else if (m.limit === 'cpu') tip = 'CPU không kịp mã hoá: chọn "Siêu mượt (720p)" hoặc tăng nhân CPU cho LDPlayer.';
-    else if (m.limit === 'bandwidth') tip = 'Mạng chậm: chọn "Siêu mượt (720p)" hoặc "Cân bằng".';
+    else if (m.limit === 'cpu') tip = 'CPU không kịp mã hoá: chọn "Mượt (720p)" hoặc tăng nhân CPU cho LDPlayer.';
+    else if (m.limit === 'bandwidth') tip = 'Mạng chậm: chọn "Mượt (720p)" hoặc "Cân bằng".';
     return { cap, enc, want, sw, lim, tip, size: m.encW ? m.encW + '×' + m.encH : '' };
   }
   function renderFpsInfo() {
