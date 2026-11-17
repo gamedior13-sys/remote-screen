@@ -121,10 +121,10 @@ class UpdateReceiver : BroadcastReceiver() {
                 // Any update (also one installed by hand from far away) must bring the phone back,
                 // otherwise nobody could reach it any more.
                 val p = ctx.getSharedPreferences("cfg", Context.MODE_PRIVATE)
-                if ((p.getString("password", "") ?: "").length >= 6) {
-                    // "Tự đánh thức" luôn luôn bật: sau cập nhật, chế độ chờ sống lại NGAY,
-                    // không cần mở app — nếu có lệnh chia sẻ lại thì standby tự nhường sau.
-                    p.edit().putBoolean("autoWakeMigrated", true).putBoolean("autoShare", true).putBoolean("autostart", true).apply()
+                // Sau cập nhật, chế độ chờ sống lại NGAY — NHƯNG tôn trọng "Ngừng hoạt động":
+                // chủ máy đã tắt armed (autoShare=false) thì không bật lại sau khi cài APK.
+                if ((p.getString("password", "") ?: "").length >= 6 && p.getBoolean("autoShare", true)) {
+                    p.edit().putBoolean("autoWakeMigrated", true).putBoolean("autostart", true).apply()
                     Updater.allowAutoConfirm(ctx, 3 * 60_000L)
                     StandbyService.startIfEnabled(ctx)
                     try {

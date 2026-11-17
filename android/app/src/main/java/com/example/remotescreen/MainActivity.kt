@@ -294,6 +294,22 @@ class MainActivity : ComponentActivity() {
         }
         awCard.addView(awBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(12) })
 
+        // ---- "Ngừng hoạt động": tắt hẳn trạng thái sẵn sàng (không cần đủ quyền như nút trên),
+        //      không watchdog/boot/FCM nào bật lại cho tới khi bật lại "Tự đánh thức" (T5b)
+        awCard.addView(Button(this).apply {
+            isAllCaps = false; textSize = 14f; stateListAnimator = null
+            setTextColor(Color.RED)
+            background = rounded(BG, 12, LINE)
+            setPadding(dp(8), dp(10), dp(8), dp(10))
+            setOnClickListener {
+                prefs.edit().putBoolean("autoShare", false).putBoolean("autostart", false).apply()
+                startService(Intent(this@MainActivity, StandbyService::class.java).setAction(StandbyService.ACTION_STOP))
+                startService(Intent(this@MainActivity, ShareService::class.java).setAction(ShareService.ACTION_KILL_ALL))
+                toast("Đã ngừng hoạt động — máy sẽ không tự đánh thức cho tới khi bật lại")
+                renderAutoWake()
+            }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)).apply { topMargin = dp(10) })
+
         // ---- số phút tự kiểm tra: chủ máy chủ động khai báo
         val awMinRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(10), 0, 0)

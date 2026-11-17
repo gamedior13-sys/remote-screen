@@ -114,7 +114,12 @@ class StandbyService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) { shutdown(); return START_NOT_STICKY }
+        if (intent?.action == ACTION_STOP) {
+            // "Ngừng hoạt động"/"Tắt sẵn sàng": tắt cờ tự đánh thức để BootReceiver và watchdog
+            // không đứng máy lên lại cho tới khi chủ máy bật lại trong app (T5b).
+            prefs().edit().putBoolean("autoShare", false).apply()
+            shutdown(); return START_NOT_STICKY
+        }
         val fromWatchdog = intent?.action == ACTION_WATCHDOG
         if (running) {
             // Đang sống: nếu vòng tự kiểm tra vừa nổ, hẹn vòng kế tiếp theo số phút hiện tại.

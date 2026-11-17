@@ -430,7 +430,7 @@ async function fcmAccessToken() {
 
 // ---- Realtime Database: presence phải sống qua mỗi lần Render deploy (ổ đĩa free là tạm) ----
 const DB_URL = (process.env.FIREBASE_DB_URL || 'https://remote-screen-209c3-default-rtdb.asia-southeast1.firebasedatabase.app').trim().replace(/\/$/, '');
-const DB_SCOPE = 'https://www.googleapis.com/auth/firebase.database';
+const DB_SCOPE = 'https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/userinfo.email';
 let dbAuth = { token: null, until: 0 };
 let dbError = '';
 
@@ -669,6 +669,19 @@ wss.on('connection', (ws, req) => {
       if (!dev) return;
       if (ws.role === 'device' && dev.ws === ws) send(dev.controller, { type: 'signal', data: m.data });
       else if (ws.role === 'controller' && dev.controller === ws) send(dev.ws, { type: 'signal', data: m.data });
+    }
+
+    // ---- máy chủ động xin dựng lại phiên: peer WebRTC đã chết nhưng socket signaling còn sống ----
+    // Trước đây máy chỉ đóng peer lặng lẽ; nếu controller không nối lại đúng lúc thì web
+    // kẹt "Đang thiết lập kết nối…" rất lâu không có kết quả.
+    if (m.type === 'need-peer' && ws.role === 'device') {
+      const dev = devices.get(ws.deviceId);
+      if (!dev || dev.ws !== ws) return;
+      if (dev.controller && dev.controller.readyState === 1) {
+        return pickedIce(dev.turn).catch(() => null)
+          .then((ice) => send(ws, ice ? { type: 'peer-joined', ice } : { type: 'peer-joined' }));
+      }
+      // Không còn controller nào xem: máy cứ ở trạng thái chờ, không làm gì thêm.
     }
   });
 

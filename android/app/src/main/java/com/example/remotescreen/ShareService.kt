@@ -67,6 +67,7 @@ class ShareService : Service() {
 
     companion object {
         const val ACTION_STOP = "com.example.remotescreen.STOP"
+        const val ACTION_KILL_ALL = "com.example.remotescreen.KILL_ALL"
         const val EXTRA_RESULT_DATA = "data"
         const val EXTRA_SERVER = "server"
         const val EXTRA_ID = "id"
@@ -135,6 +136,14 @@ class ShareService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent == null || intent.action == ACTION_STOP) {
+            shutdown()
+            return START_NOT_STICKY
+        }
+        if (intent.action == ACTION_KILL_ALL) {
+            // "Ngừng hoạt động" (T5b): ngắt chia sẻ VÀ tắt trạng thái sẵn sàng — BootReceiver,
+            // watchdog và FCM đều tôn trọng autoShare=false nên máy không tự bật lại.
+            getSharedPreferences("cfg", MODE_PRIVATE).edit().putBoolean("autoShare", false).putBoolean("autostart", false).apply()
+            startService(Intent(this, StandbyService::class.java).setAction(StandbyService.ACTION_STOP))
             shutdown()
             return START_NOT_STICKY
         }
@@ -237,12 +246,17 @@ class ShareService : Service() {
             this, 0, Intent(this, ShareService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+        val kill = PendingIntent.getService(
+            this, 2, Intent(this, ShareService::class.java).setAction(ACTION_KILL_ALL),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         val n: Notification = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_share)
             .setContentTitle("Đang chia sẻ màn hình")
             .setContentText("ID $deviceId — bấm Dừng để ngắt")
             .setOngoing(true)
             .addAction(0, "Dừng", stop)
+            .addAction(0, "Ngừng hoạt động", kill)
             .build()
         if (Build.VERSION.SDK_INT >= 29) {
             startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
@@ -729,8 +743,19 @@ class ShareService : Service() {
             override fun onConnectionChange(s: PeerConnection.PeerConnectionState) {
                 Log.i(TAG, "pc state $s")
                 if (s == PeerConnection.PeerConnectionState.FAILED || s == PeerConnection.PeerConnectionState.CLOSED) {
-                    // Đóng peer ở luồng khác (không dispose ngay trong callback của chính nó) rồi chờ controller nối lại.
-                    mainH.post { if (gen == peerGen) { closePeer(); state = STATE_READY } }
+                    // Đóng peer ở luồng khác (không dispose ngay trong callback của chính nó).
+                    mainH.post {
+                        if (gen == peerGen) {
+                            val rebuild = state == STATE_CONTROLLED
+                            closePeer(); state = STATE_READY
+                            // Peer chết nhưng socket signaling còn sống: chủ động xin server dựng lại
+                            // phiên thay vì im lặng chờ controller nối lại (web có thể kẹt rất lâu).
+                            val w = ws
+                            if (rebuild && !stopping && w != null) {
+                                try { w.send("{\"type\":\"need-peer\"}") } catch (_: Throwable) {}
+                            }
+                        }
+                    }
                 }
             }
             override fun onSignalingChange(s: PeerConnection.SignalingState?) {}

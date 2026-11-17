@@ -443,7 +443,7 @@
   let reconnectLimit = RECONNECT_MS;
 
   let ws, pc, dc, statsTimer, usageTimer, iceServers = [], current = null;
-  let inSession = false, reconnecting = false, reconnectSince = 0, retryTimer = null, discTimer = null, wakeTries = 0;
+  let inSession = false, reconnecting = false, reconnectSince = 0, retryTimer = null, discTimer = null, setupTimer = null, wakeTries = 0;
   let relay = null, lastKbps = 0, usage = null, wakeLock = null, sessionRelayBytes = 0;
   let imeActive = false, sheetByIme = false, liveTimer = null;
 
@@ -646,9 +646,15 @@
     }
     if (m.type === 'connected') {
       if (!inSession) { remember(current.id, current.password); openSession(); }
-      reconnecting = false; reconnectSince = 0; reconnectLimit = RECONNECT_MS; rxBytes = 0; rxAt = 0; wakeTries = 0;
+      // KHÔNG reset reconnectSince ở đây: nếu máy không trả SDP (socket signaling còn mà peer
+      // WebRTC đã chết), reset sẽ khiến mốc kiên nhẫn không bao giờ tích lũy → web kẹt overlay
+      // "Đang thiết lập kết nối…" rất lâu không có kết quả. Mốc chỉ xoá khi hình chảy thật (updateStats).
+      reconnecting = false; reconnectLimit = RECONNECT_MS; rxBytes = 0; rxAt = 0; wakeTries = 0;
       showOverlay('Đang thiết lập kết nối…');
       createPeer();
+      // Guard 15 s: đã 'connected' mà vẫn chưa có khung hình nào → chủ động kết nối lại.
+      clearTimeout(setupTimer);
+      setupTimer = setTimeout(() => { if (inSession && pc && !video.videoWidth) scheduleReconnect('Máy Android chưa gửi hình, thử lại…'); }, 15000);
       return;
     }
     if (m.type === 'peer-left') return scheduleReconnect('Máy Android tạm mất kết nối, đang chờ…');
@@ -709,7 +715,7 @@
     closePeer();
     $('#dot').classList.remove('ok');
     showOverlay(text || 'Đang kết nối lại…', true);
-    clearTimeout(retryTimer);
+    clearTimeout(retryTimer); clearTimeout(setupTimer);
     retryTimer = setTimeout(async () => { if (!inSession) return; await loadConfig(); connect(); }, 2500);
   }
 
@@ -767,10 +773,11 @@
         clearTimeout(discTimer); discTimer = setTimeout(() => { if (pc === me && pc.connectionState !== 'connected') scheduleReconnect(); }, 6000);
       }
       if (s === 'failed') { if (turnPick) forgetTurn(); scheduleReconnect('Không truyền được hình ảnh, đang thử lại…'); }
+      if (s === 'closed' && inSession) scheduleReconnect();
     };
     statsTimer = setInterval(updateStats, 1000);
   }
-  video.addEventListener('loadeddata', () => { $('#ov').classList.add('hidden'); layout(); placeCursor(); });
+  video.addEventListener('loadeddata', () => { clearTimeout(setupTimer); $('#ov').classList.add('hidden'); layout(); placeCursor(); });
   video.addEventListener('resize', layout);
 
   // ---------- quality ----------
@@ -824,9 +831,10 @@
       }
     });
     const now = performance.now();
-    if (bytes != null && last.t && bytes >= last.bytes) {
+    if (bytes != null && last.t && bytes > last.bytes) {
       lastKbps = Math.round(((bytes - last.bytes) * 8) / (now - last.t));
       if (relay) sessionRelayBytes += bytes - last.bytes;
+      reconnectSince = 0;   // hình đang chảy thật: mới xoá mốc kiên nhẫn kết nối lại
     }
     if (bytes != null) {
       if (bytes > rxBytes) { rxBytes = bytes; rxAt = now; }
