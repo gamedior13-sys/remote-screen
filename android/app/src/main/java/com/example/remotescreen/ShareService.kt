@@ -957,3 +957,4 @@ class ShareService : Service() {
         override fun onSetFailure(error: String?) { Log.w(TAG, "sdp set failed: $error") }
     }
 }
+

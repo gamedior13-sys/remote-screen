@@ -563,3 +563,4 @@ class ControlAccessibilityService : AccessibilityService() {
     fun emitState() = emit(stateJson())
     private fun emit(o: JSONObject) { try { eventListener?.invoke(o) } catch (_: Throwable) {} }
 }
+
