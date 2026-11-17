@@ -4,7 +4,8 @@
   "description": "Signaling server for the remote screen viewer/controller (WebRTC)",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test --test-force-exit test/*.test.js"
   },
   "engines": {
     "node": ">=18"
