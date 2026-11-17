@@ -16,6 +16,7 @@ const crypto = require('crypto');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const dgram = require('dgram');
+const { probeTurn } = require('./turnprobe');
 
 const PORT = Number(process.env.PORT || 8080);
 const os = require('os');
@@ -163,7 +164,10 @@ async function relayCandidates() {
   // Our regional relay first: the client keeps whichever answers with the lowest ping.
   if (SG_TURN) {
     const h = turnHost(SG_TURN_URLS[0]);
-    if (h && (await relayAnswers(h, 3478, 1200))) {
+    // Chỉ quảng bá khi lần kiểm tra THẬT gần nhất (allocate + gói đi vào cổng relay) đạt.
+    // Chưa có kết quả (vừa khởi động) thì tạm dùng phép thử STUN nhanh như trước.
+    const usable = sgHealth.ok === null ? (h && (await relayAnswers(h, turnPort(SG_TURN_URLS[0]), 1200))) : sgHealth.ok;
+    if (h && usable) {
       const urls = [...SG_TURN_URLS].sort((a, b) => Number(isUdpUrl(b)) - Number(isUdpUrl(a)));
       out.push({ name: SG_TURN_NAME, url: urls[0], ice: { urls, username: SG_TURN_USER, credential: SG_TURN_PASS } });
     }
@@ -194,6 +198,34 @@ async function relayCandidates() {
     }
   }
   return out;
+}
+
+// Kiểm tra relay riêng (Oracle) bằng allocation thật, chạy nền mỗi 5 phút. Phép thử STUN cũ chỉ chứng
+// minh cổng 3478 sống: khi tường lửa chặn dải cổng relay nó vẫn báo "OK" và mọi phiên đi vào relay hỏng
+// (rơi xuống TCP hoặc không có hình) — đúng triệu chứng "chậm, mờ, ping cao".
+const turnPort = (u) => { const m = /^turns?:[^:?]+:(\d+)/i.exec(u || ''); return m ? Number(m[1]) : 3478; };
+const sgHealth = { ok: null, at: 0, detail: null };
+// SG_TURN_PROBE=stun: chỉ thử STUN (dùng khi server này chạy CHUNG máy với coturn — gói gửi vào IP
+// công khai của chính mình có thể không quay vòng được trên Oracle, làm phép thử đầy đủ báo sai).
+// Khi đó kiểm tra đầy đủ từ bên ngoài bằng: node deploy/oracle/check-turn.js <host> <user> <pass>
+const SG_TURN_PROBE = (process.env.SG_TURN_PROBE || 'full').trim();
+async function refreshSgHealth() {
+  if (!SG_TURN) return sgHealth;
+  const host = turnHost(SG_TURN_URLS[0]);
+  if (SG_TURN_PROBE === 'stun') {
+    const ok = await relayAnswers(host, turnPort(SG_TURN_URLS[0]), 1500);
+    Object.assign(sgHealth, { ok, at: Date.now(), detail: { ok, stun: ok, mode: 'stun' } });
+    return sgHealth;
+  }
+  const detail = await probeTurn({ host, port: turnPort(SG_TURN_URLS[0]), username: SG_TURN_USER, credential: SG_TURN_PASS, timeoutMs: 2500 })
+    .catch((e) => ({ ok: false, error: e.message }));
+  if (sgHealth.ok !== detail.ok) console.log(`relay ${SG_TURN_NAME} ${host}: ${detail.ok ? 'OK' : 'KHÔNG DÙNG ĐƯỢC — ' + detail.error}`);
+  Object.assign(sgHealth, { ok: detail.ok, at: Date.now(), detail });
+  return sgHealth;
+}
+if (SG_TURN) {
+  setTimeout(refreshSgHealth, 1000).unref();
+  setInterval(refreshSgHealth, 5 * 60e3).unref();
 }
 
 // A relay is only useful while it is reachable: probe it with a plain STUN binding request over UDP
@@ -247,7 +279,11 @@ app.get('/turncheck', async (_req, res) => {
   const rows = [];
   if (SG_TURN) {
     const h = turnHost(SG_TURN_URLS[0]);
-    rows.push({ name: SG_TURN_NAME, host: h, port: 3478, answers: h ? await relayAnswers(h, 3478, 1500) : false });
+    const p = turnPort(SG_TURN_URLS[0]);
+    const deep = await refreshSgHealth();
+    rows.push({ name: SG_TURN_NAME, host: h, port: p, answers: h ? await relayAnswers(h, p, 1500) : false,
+      // stun / allocate / inbound (gói từ ngoài vào cổng relay) — inbound=false nghĩa là tường lửa chặn dải cổng relay
+      probe: deep.detail });
   }
   const relays = (await relayCandidates()).map((r) => ({ name: r.name, url: r.url }));
   res.set('Cache-Control', 'no-store').json({ configured: SG_TURN, own: rows, relays });
@@ -263,9 +299,23 @@ app.post('/fcm', (req, res) => {
   if (!pr || !safeEqual(pr.pwHash, sha(String(b.password || '')))) return res.status(403).json({ ok: false });
   if (!fcm && !diag) return res.status(400).json({ ok: false });
   if (fcm) pr.fcm = fcm;
-  if (diag) { pr.diag = diag; pr.diagTs = Date.now(); }
+  if (diag) {
+    pr.diag = diag; pr.diagTs = Date.now();
+    // Giữ lịch sử 50 dòng: trước đây mỗi dòng mới ghi đè dòng cũ nên không truy được vì sao phiên chết.
+    pr.diagLog = [...(Array.isArray(pr.diagLog) ? pr.diagLog : []), { t: pr.diagTs, text: diag }].slice(-DIAG_KEEP);
+  }
   savePresence();
   res.json({ ok: true });
+});
+
+// Lịch sử chẩn đoán của MỘT máy (cần đúng mật khẩu máy đó).
+const DIAG_KEEP = 50;
+app.post('/diag', (req, res) => {
+  const b = req.body || {};
+  const id = String(b.id || '').replace(/\s+/g, '');
+  const pr = presence[id];
+  if (!pr || !safeEqual(pr.pwHash, sha(String(b.password || '')))) return res.status(403).json({ ok: false });
+  res.set('Cache-Control', 'no-store').json({ ok: true, log: Array.isArray(pr.diagLog) ? pr.diagLog : [] });
 });
 
 // FCM diagnostics for the wake path: is the service account loaded, and how many phones reported a token?
@@ -364,6 +414,12 @@ app.get('/usage', async (_req, res) => {
     res.json({ available: false });
   }
 });
+// Chuyển máy chủ (Render → Oracle): đặt REDIRECT_TO=https://<máy-mới>/ trên máy CŨ. Trình duyệt được
+// chuyển sang trang mới; APK, version.json và WebSocket vẫn chạy cho điện thoại chưa kịp cập nhật.
+const REDIRECT_TO = (process.env.REDIRECT_TO || '').trim().replace(/\/$/, '');
+if (REDIRECT_TO) {
+  app.get(['/', '/index.html', '/web-index-patched.html'], (req, res) => res.redirect(302, REDIRECT_TO + req.originalUrl));
+}
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: 0 }));
 
 const server = http.createServer(app);

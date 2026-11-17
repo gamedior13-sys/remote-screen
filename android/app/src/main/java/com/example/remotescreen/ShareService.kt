@@ -92,6 +92,41 @@ class ShareService : Service() {
         @Volatile
         var state = STATE_CONNECTING
             private set
+
+        const val EXTRA_RESHARE = "reshare"
+        private const val CHANNEL_RESHARE = "reshare"
+        private const val NOTIF_RESHARE = 3
+
+        /** Một thông báo duy nhất: chủ máy chạm là mở app và xin lại quyền chia sẻ (chủ máy đang cầm máy). */
+        fun showReshareNotification(ctx: Context, reason: String) {
+            try {
+                val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                if (Build.VERSION.SDK_INT >= 26) {
+                    nm.createNotificationChannel(NotificationChannel(CHANNEL_RESHARE, "Chia sẻ bị ngắt", NotificationManager.IMPORTANCE_HIGH))
+                }
+                val open = PendingIntent.getActivity(
+                    ctx, 13,
+                    Intent(ctx, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        .putExtra(EXTRA_RESHARE, true),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+                val n = NotificationCompat.Builder(ctx, CHANNEL_RESHARE)
+                    .setSmallIcon(android.R.drawable.ic_menu_share)
+                    .setContentTitle("Đã ngừng chia sẻ màn hình")
+                    .setContentText("Bấm để chia sẻ lại")
+                    .setStyle(NotificationCompat.BigTextStyle().bigText("Bấm để chia sẻ lại.\nLý do: $reason"))
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setContentIntent(open)
+                    .setAutoCancel(true)
+                    .build()
+                nm.notify(NOTIF_RESHARE, n)
+            } catch (t: Throwable) { Log.w(TAG, "reshare notify", t) }
+        }
+
+        fun cancelReshareNotification(ctx: Context) {
+            try { (ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(NOTIF_RESHARE) } catch (_: Throwable) {}
+        }
     }
 
     private val http = OkHttpClient.Builder()
@@ -160,7 +195,14 @@ class ShareService : Service() {
         startForegroundNotification()
         running = true
         state = STATE_CONNECTING
+        cancelReshareNotification(this)
+        // Chế độ chờ không còn cần: tắt socket standby ngay (không đổi cài đặt tự đánh thức),
+        // tránh hai socket cùng đăng ký một ID với server.
+        if (StandbyService.running) {
+            try { startService(Intent(this, StandbyService::class.java).setAction(StandbyService.ACTION_YIELD)) } catch (_: Throwable) {}
+        }
         // Đã có phiên chia sẻ: tắt bộ tự bấm hộp thoại, tránh bấm nhầm lần hai (Android sẽ huỷ phiên).
+        Updater.revokeAutoConfirm(this)
         ControlAccessibilityService.instance?.endConfirmLoop()
         ensureScreenOn()
         acquireLocks()
@@ -177,15 +219,25 @@ class ShareService : Service() {
         watchScreen()
 
         thread(name = "init") {
+            // Hai tầng lỗi tách riêng. Quyền chia sẻ (MediaProjection) chỉ dùng được MỘT lần: chỉ khi
+            // KHÔNG dựng được capture mới kết thúc. Trước đây mọi lỗi (kể cả mạng/signaling) đều gọi
+            // shutdown() → mất quyền → máy phải xin lại hộp thoại chia sẻ (gốc của lỗi "lặp hộp thoại").
             try {
-                fetchIceServers()
+                fetchIceServers()          // tự bắt lỗi, rơi về STUN mặc định
                 initWebRtc()
                 startCapture(permissionData)
+            } catch (t: Throwable) {
+                Log.e(TAG, "capture startup failed", t)
+                shutdown(lost = "không khởi động được capture: " + t.javaClass.simpleName + ": " + (t.message ?: ""))
+                return@thread
+            }
+            try {
                 connectSignaling()
             } catch (t: Throwable) {
-                Log.e(TAG, "startup failed", t)
-                FcmPush.reportDiag(applicationContext, "khởi động lỗi: " + t.javaClass.simpleName + ": " + (t.message ?: ""))
-                shutdown()
+                // Mạng/địa chỉ máy chủ: giữ nguyên capture, thử lại theo backoff.
+                Log.w(TAG, "signaling startup failed", t)
+                FcmPush.reportDiag(applicationContext, "signaling lỗi lúc khởi động, sẽ thử lại: " + t.javaClass.simpleName + ": " + (t.message ?: ""))
+                retryLater()
             }
         }
         return START_NOT_STICKY
@@ -431,7 +483,9 @@ class ShareService : Service() {
 
     private fun captureSize(): Pair<Int, Int> {
         val (sw, sh) = realScreen()
-        val scale = minOf(1f, MAX_LONG_SIDE / maxOf(sw, sh).toFloat())
+        // Theo mức chất lượng controller chọn (#9): trước đây cố định 1280 nên "Nét 1600" không có tác dụng,
+        // còn "Mượt 720" vẫn chụp + copy GPU ở 1280 rồi mới thu nhỏ.
+        val scale = minOf(1f, longSideLimit / maxOf(sw, sh).toFloat())
         return ((sw * scale).toInt() and 1.inv()) to ((sh * scale).toInt() and 1.inv())
     }
 
@@ -522,8 +576,8 @@ class ShareService : Service() {
         videoSource = f.createVideoSource(true /* isScreencast */)
         capturer = ScreenCapturerAndroid(permissionData, object : MediaProjection.Callback() {
             override fun onStop() {
-                FcmPush.reportDiag(applicationContext, "projection onStop — Android huỷ phiên chia sẻ")
-                shutdown()
+                if (stopping) return       // chính mình vừa dừng (bấm Dừng) — không phải bị thu hồi
+                shutdown(lost = "projection onStop — Android thu hồi quyền chia sẻ")
             }
         })
         capturer!!.initialize(helper, applicationContext, videoSource!!.capturerObserver)
@@ -546,9 +600,12 @@ class ShareService : Service() {
         val s = sender ?: return
         try {
             val p = s.parameters
-            // Favour smooth, low-latency frames over sharpness when the link is congested.
-            p.degradationPreference = RtpParameters.DegradationPreference.MAINTAIN_FRAMERATE
-            p.encodings.forEach { e -> e.maxBitrateBps = maxBitrate; e.maxFramerate = fps }
+            // #6: MAINTAIN_FRAMERATE + nguồn screencast làm encoder hạ ĐỘ PHÂN GIẢI mỗi khi mạng/CPU hụt
+            // → hình mờ (nhất là vài giây đầu, khi ước lượng băng thông còn thấp). BALANCED giảm cả fps
+            // lẫn độ phân giải vừa phải; sàn bitrate giúp không tụt xuống mức nhoè chữ.
+            p.degradationPreference = RtpParameters.DegradationPreference.BALANCED
+            val floor = (maxBitrate / 4).coerceIn(150_000, 1_000_000)
+            p.encodings.forEach { e -> e.maxBitrateBps = maxBitrate; e.minBitrateBps = floor; e.maxFramerate = fps }
             s.setParameters(p)
         } catch (t: Throwable) { Log.w(TAG, "sender params", t) }
     }
@@ -557,6 +614,7 @@ class ShareService : Service() {
         fps = newFps.coerceIn(5, 60)
         longSideLimit = longSide.coerceIn(480, 1920)
         maxBitrate = bitrate.coerceIn(200_000, 10_000_000)
+        try { updateCapture() } catch (t: Throwable) { Log.w(TAG, "capture resize", t) }   // kích thước chụp theo preset
         applyOutputFormat()
         applySenderParams()
     }
@@ -918,10 +976,19 @@ class ShareService : Service() {
 
     // ---------------------------------------------------------------- teardown
 
-    private fun shutdown() {
+    /**
+     * [lost] = null: chủ máy bấm Dừng/Ngừng hoạt động. Khác null: quyền chia sẻ bị mất ngoài ý muốn —
+     * ghi lý do và hiện thông báo "Bấm để chia sẻ lại" (một chạm, thay cho vòng tự bấm hộp thoại).
+     */
+    private fun shutdown(lost: String? = null) {
         if (stopping) { stopSelf(); return }
         stopping = true
         running = false
+        if (lost != null) {
+            Log.w(TAG, "sharing lost: $lost")
+            FcmPush.reportDiag(applicationContext, "mất chia sẻ: $lost".take(280))
+            showReshareNotification(applicationContext, lost)
+        }
         releaseLocks()
         state = STATE_CONNECTING
         try { ws?.close(1000, "bye") } catch (_: Throwable) {}
@@ -945,7 +1012,8 @@ class ShareService : Service() {
     }
 
     override fun onDestroy() {
-        if (!stopping) shutdown()
+        // Bị hệ thống huỷ service (không qua shutdown): coi như mất chia sẻ.
+        if (!stopping) shutdown(lost = "service bị hệ thống huỷ")
         super.onDestroy()
     }
 

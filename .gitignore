@@ -4,3 +4,6 @@ build/
 local.properties
 .idea/
 *.iml
+
+# server runtime state
+server/presence.json

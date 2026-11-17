@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: build-pc
+  group: build-pc-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -40,7 +40,9 @@ jobs:
 
       # Publish the .exe as a fixed "pc" release so phones/users download it directly:
       # https://github.com/<owner>/<repo>/releases/download/pc/remote-screen-pc.exe
+      # Chỉ main được ghi đè bản phát hành: trước đây push nhánh nào cũng thay file .exe người dùng tải.
       - name: Publish to GitHub Release
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
