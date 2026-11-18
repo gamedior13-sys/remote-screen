@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         /** Public signaling server. Change here (or in the app under "Nâng cao") if you host it elsewhere. */
-        const val DEFAULT_SERVER = "https://remote-screen-phong.onrender.com"
+        const val DEFAULT_SERVER = "https://161.118.218.91.sslip.io"
 
         private const val BG = 0xFF0B0D12.toInt()
         private const val CARD = 0xFF161A23.toInt()
